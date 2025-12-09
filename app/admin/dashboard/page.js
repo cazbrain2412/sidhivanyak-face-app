@@ -10,51 +10,63 @@ export default function AdminDashboardPage() {
     attendanceToday: 0,
   });
   const [loading, setLoading] = useState(true);
-  const today = new Date().toLocaleDateString();
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        // employees count
+        // ---- EMPLOYEES ----
         const e = await fetch("/api/employees/descriptors");
         const ej = await e.json();
-        const employeeCount = Array.isArray(ej.employees) ? ej.employees.length : 0;
+        const employeeCount = Array.isArray(ej.employees)
+          ? ej.employees.length
+          : 0;
 
-        // supervisors count
-        const s = await fetch("/api/supervisors/create"); // will 405 but we only want to hit the route namespace
-        // instead call DB-light endpoint: use attendance list + employees as proxy
-        const supRes = await fetch("/api/supervisors/create"); // placeholder: we'll replace with proper API later
+        // ---- SUPERVISORS ----
+        // NOTE: adjust `/api/supervisors/list` if your supervisors page uses a different URL.
         let supervisorCount = 0;
         try {
-          const supJ = await supRes.json();
-          if (Array.isArray(supJ.supervisors)) supervisorCount = supJ.supervisors.length;
+          const s = await fetch("/api/supervisors/list");
+          const sj = await s.json();
+          supervisorCount = Array.isArray(sj.supervisors)
+            ? sj.supervisors.length
+            : 0;
         } catch (err) {
-          supervisorCount = 1; // fallback until we add supervisors-list API
+          console.error("supervisors count error", err);
         }
 
-        // zones (we don't yet have zones API; show distinct zones in employees)
+        // ---- ZONES ----
+        // Use same API that your Zones page uses
+        // (for example /api/zones/list – change if needed).
         let zoneCount = 0;
         try {
-          const allEmps = await fetch("/api/employees/by-supervisor", { method: "GET", headers: { Authorization: "" }});
-          // fallback: count unique zone fields from employees list (we'll add proper zones API later)
-          zoneCount = 0;
+          const z = await fetch("/api/zones/list");
+          const zj = await z.json();
+          zoneCount = Array.isArray(zj.zones) ? zj.zones.length : 0;
         } catch (err) {
-          zoneCount = 1;
+          console.error("zones count error", err);
         }
 
-        // attendance today
+        // ---- ATTENDANCE TODAY ----
         const att = await fetch("/api/attendance/list");
         const attJ = await att.json();
-        const todayIso = new Date().toISOString().slice(0,10);
+        const todayIso = new Date().toISOString().slice(0, 10);
+
         const attToday = Array.isArray(attJ.attendance)
-          ? attJ.attendance.filter(a => (a.timestamp || "").slice(0,10) === todayIso).length
+          ? attJ.attendance.filter((a) => {
+              const raw =
+                a.timestamp || a.time || a.createdAt || a.date || null;
+              if (!raw) return false;
+              const d = new Date(raw);
+              if (Number.isNaN(d.getTime())) return false;
+              return d.toISOString().slice(0, 10) === todayIso;
+            }).length
           : 0;
 
         setCounts({
           employees: employeeCount,
-          supervisors: supervisorCount || 0,
-          zones: zoneCount || 0,
+          supervisors: supervisorCount,
+          zones: zoneCount,
           attendanceToday: attToday,
         });
       } catch (err) {
@@ -63,6 +75,7 @@ export default function AdminDashboardPage() {
         setLoading(false);
       }
     }
+
     load();
   }, []);
 
@@ -71,10 +84,19 @@ export default function AdminDashboardPage() {
       <h1 className="text-2xl font-semibold mb-4">Admin Dashboard</h1>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <Card title="Total Employees" value={loading ? "…" : counts.employees} />
-        <Card title="Supervisors" value={loading ? "…" : counts.supervisors} />
+        <Card
+          title="Total Employees"
+          value={loading ? "…" : counts.employees}
+        />
+        <Card
+          title="Supervisors"
+          value={loading ? "…" : counts.supervisors}
+        />
         <Card title="Zones" value={loading ? "…" : counts.zones} />
-        <Card title="Attendance Today" value={loading ? "…" : counts.attendanceToday} />
+        <Card
+          title="Attendance Today"
+          value={loading ? "…" : counts.attendanceToday}
+        />
       </div>
 
       <section className="bg-white p-4 rounded shadow">
@@ -94,24 +116,46 @@ function Card({ title, value }) {
   );
 }
 
+function formatAttendanceTime(row) {
+  // Try multiple possible fields from the API
+  const raw = row.timestamp || row.time || row.createdAt || row.date;
+
+  if (!raw) return "-";
+
+  // If backend already sends a formatted string, just show it
+  if (typeof raw === "string" && !raw.includes("T")) {
+    return raw;
+  }
+
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "-";
+
+  return d.toLocaleString();
+}
+
 function RecentAttendance() {
   const [rows, setRows] = useState(null);
 
   useEffect(() => {
     let mounted = true;
+
     async function load() {
       try {
         const r = await fetch("/api/attendance/list");
         const j = await r.json();
         if (!mounted) return;
-        setRows(Array.isArray(j.attendance) ? j.attendance.slice(0,10) : []);
+        const list = Array.isArray(j.attendance) ? j.attendance : [];
+        setRows(list.slice(0, 10));
       } catch (err) {
         console.error(err);
         setRows([]);
       }
     }
+
     load();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   if (rows === null) return <div>Loading...</div>;
@@ -127,11 +171,11 @@ function RecentAttendance() {
         </tr>
       </thead>
       <tbody>
-        {rows.map(r => (
+        {rows.map((r) => (
           <tr key={r.id} className="border-t">
-            <td className="p-2">{new Date(r.timestamp).toLocaleString()}</td>
+            <td className="p-2">{formatAttendanceTime(r)}</td>
             <td className="p-2">{r.employeeName || "-"}</td>
-            <td className="p-2">{r.employeeCode}</td>
+            <td className="p-2">{r.employeeCode || "-"}</td>
           </tr>
         ))}
       </tbody>
