@@ -134,8 +134,9 @@ export default function AdminAttendanceCalendar() {
     const map = {};
     for (const a of attendance || []) {
       if (!a || !a.date || !a.employeeCode) continue;
-      const d = new Date(a.date);
-      const keyDate = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      const keyDate = a.date;
+
+      
       const key = `${a.employeeCode}|${keyDate}`;
       map[key] = a;
     }
@@ -210,8 +211,18 @@ export default function AdminAttendanceCalendar() {
     if (!drawerOpen) return;
     if (drawerMode === "cell") {
       if (cellRecord) {
-        setFormPunchIn(cellRecord.punchIn ? new Date(cellRecord.punchIn).toISOString().slice(0, 16) : "");
-        setFormPunchOut(cellRecord.punchOut ? new Date(cellRecord.punchOut).toISOString().slice(0, 16) : "");
+        setFormPunchIn(cellRecord.punchIn
+  ? new Date(cellRecord.punchIn).toLocaleString("sv-SE").slice(0, 16)
+  : ""
+);
+
+setFormPunchOut(cellRecord.punchOut
+  ? new Date(cellRecord.punchOut).toLocaleString("sv-SE").slice(0, 16)
+  : ""
+);
+
+        
+        
         setFormStatus(cellRecord.status || "");
         setFormNotes(cellRecord.notes || "");
       } else {
@@ -246,8 +257,9 @@ export default function AdminAttendanceCalendar() {
         date: dateISO,
       };
 
-      if (formPunchIn) payload.punchIn = new Date(formPunchIn).toISOString();
-      if (formPunchOut) payload.punchOut = new Date(formPunchOut).toISOString();
+      if (formPunchIn) payload.punchIn = new Date(formPunchIn);
+      if (formPunchOut) payload.punchOut = new Date(formPunchOut);
+      
       if (formStatus) payload.status = formStatus;
       if (formNotes) payload.notes = formNotes;
 
