@@ -10,10 +10,6 @@
  *    - Punch IN + Punch OUT, workHours >= 2 -> PRESENT
  *    - Punch IN + Punch OUT, workHours < 2  -> HALF
  *    - Punch OUT only (no IN) -> HALF
- *
- *  🔵 NEW:
- *    - Accepts "location" from client: { lat, lng, name? }
- *    - Stores in Attendance.location = { lat, lng, name? }
  */
 
 import dbConnect from "@/lib/mongodb";
@@ -39,23 +35,11 @@ function buildDateKey(d = new Date()) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// 🔵 Normalize location object from client
-function normalizeLocation(loc) {
-  if (!loc || typeof loc !== "object") return null;
-  const lat = Number(loc.lat ?? loc.latitude);
-  const lng = Number(loc.lng ?? loc.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  const name = typeof loc.name === "string" && loc.name.trim() ? loc.name.trim() : null;
-  return { lat, lng, name };
-}
-
 export async function POST(req) {
   await dbConnect();
   try {
     const body = await req.json();
-    const { descriptor, action, location } = body;
-
-    const clientLocation = normalizeLocation(location);
+    const { descriptor, action, location } = body; // <-- location added
 
     if (!Array.isArray(descriptor) || descriptor.length < 10) {
       return NextResponse.json(
@@ -113,33 +97,41 @@ export async function POST(req) {
       date: dateKey,
     }).lean();
 
+    // small helper: attach location fields if provided
+    function buildLocationSet() {
+      if (!location || typeof location !== "object") return {};
+      const lat = Number(location.lat);
+      const lng = Number(location.lng);
+      const accuracy = location.accuracy != null ? Number(location.accuracy) : null;
+      const set = {};
+      if (!Number.isNaN(lat)) set.locationLat = lat;
+      if (!Number.isNaN(lng)) set.locationLng = lng;
+      if (accuracy != null && !Number.isNaN(accuracy)) set.locationAccuracy = accuracy;
+      return set;
+    }
+
     // little helpers to check fields even if schema names differ
     const hasInFlag = (rec) =>
       !!(rec?.punchIn || rec?.in || rec?.punch?.in || rec?.punchInTime);
     const hasOutFlag = (rec) =>
       !!(rec?.punchOut || rec?.out || rec?.punch?.out || rec?.punchOutTime);
 
-    // helper to attach static employee info + location
-    function attachMeta(target) {
-      if (best.zone) target.zone = best.zone;
-      if (best.division) target.division = best.division;
-      if (best.department) target.department = best.department;
-      if (best.supervisorCode) target.supervisorCode = best.supervisorCode;
-      if (clientLocation) target.location = clientLocation;
-      return target;
-    }
-
     // ---------- ACTION: PUNCH IN ----------
     if (action === "in") {
       if (!existing) {
         // first punch of the day -> create record
-        const toCreate = attachMeta({
+        const toCreate = {
           employeeCode: matchedCode,
           employeeName: best.name || best.code,
           date: dateKey,
           punchIn: now,
           status: "HALF", // until we get OUT with >=2 hours
-        });
+          ...buildLocationSet(),
+        };
+        if (best.zone) toCreate.zone = best.zone;
+        if (best.division) toCreate.division = best.division;
+        if (best.department) toCreate.department = best.department;
+        if (best.supervisorCode) toCreate.supervisorCode = best.supervisorCode;
 
         const created = await Attendance.create(toCreate);
         return NextResponse.json(
@@ -173,17 +165,15 @@ export async function POST(req) {
         }
 
         // set punchIn on existing doc
-        const updateData = {
-          punchIn: now,
-          status: "HALF", // until OUT decides full/half
-        };
-        if (clientLocation) {
-          updateData.location = clientLocation;
-        }
-
         const updated = await Attendance.findByIdAndUpdate(
           existing._id,
-          { $set: updateData },
+          {
+            $set: {
+              punchIn: now,
+              status: "HALF", // until OUT decides full/half
+              ...buildLocationSet(),
+            },
+          },
           { new: true }
         ).lean();
 
@@ -208,13 +198,18 @@ export async function POST(req) {
     // Re-fetch in case we changed above
     if (!existing) {
       // No record at all today → create HALF-DAY with OUT only
-      const toCreate = attachMeta({
+      const toCreate = {
         employeeCode: matchedCode,
         employeeName: best.name || best.code,
         date: dateKey,
         punchOut: now,
         status: "HALF",
-      });
+        ...buildLocationSet(),
+      };
+      if (best.zone) toCreate.zone = best.zone;
+      if (best.division) toCreate.division = best.division;
+      if (best.department) toCreate.department = best.department;
+      if (best.supervisorCode) toCreate.supervisorCode = best.supervisorCode;
 
       const created = await Attendance.create(toCreate);
       return NextResponse.json(
@@ -268,17 +263,15 @@ export async function POST(req) {
       statusValue = "HALF";
     }
 
-    const updateDataOut = {
-      punchOut: now,
-      status: statusValue,
-    };
-    if (clientLocation) {
-      updateDataOut.location = clientLocation;
-    }
-
     const updatedOut = await Attendance.findByIdAndUpdate(
       existing._id,
-      { $set: updateDataOut },
+      {
+        $set: {
+          punchOut: now,
+          status: statusValue,
+          ...buildLocationSet(),
+        },
+      },
       { new: true }
     ).lean();
 

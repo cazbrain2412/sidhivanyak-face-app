@@ -41,6 +41,99 @@ function formatTimeShort(ts) {
 }
 
 /**
+ * Extract latitude/longitude from various possible shapes on attendance record.
+ * We DO NOT change backend logic, just read whatever is present.
+ */
+function extractLatLngFromRecord(a) {
+  if (!a || typeof a !== "object") return { lat: null, lng: null };
+
+  let lat = null;
+  let lng = null;
+
+  // common patterns
+  if (typeof a.lat === "number" && typeof a.lng === "number") {
+    lat = a.lat;
+    lng = a.lng;
+  } else if (typeof a.latitude === "number" && typeof a.longitude === "number") {
+    lat = a.latitude;
+    lng = a.longitude;
+  } else if (a.location && typeof a.location === "object") {
+    if (typeof a.location.lat === "number" && typeof a.location.lng === "number") {
+      lat = a.location.lat;
+      lng = a.location.lng;
+    } else if (
+      typeof a.location.latitude === "number" &&
+      typeof a.location.longitude === "number"
+    ) {
+      lat = a.location.latitude;
+      lng = a.location.longitude;
+    }
+  } else if (a.coords && typeof a.coords === "object") {
+    if (typeof a.coords.lat === "number" && typeof a.coords.lng === "number") {
+      lat = a.coords.lat;
+      lng = a.coords.lng;
+    } else if (
+      typeof a.coords.latitude === "number" &&
+      typeof a.coords.longitude === "number"
+    ) {
+      lat = a.coords.latitude;
+      lng = a.coords.longitude;
+    }
+  }
+
+  // if numbers but as strings
+  if (lat == null && typeof a.lat === "string" && typeof a.lng === "string") {
+    const nLat = Number(a.lat);
+    const nLng = Number(a.lng);
+    if (!Number.isNaN(nLat) && !Number.isNaN(nLng)) {
+      lat = nLat;
+      lng = nLng;
+    }
+  }
+  if (
+    lat == null &&
+    typeof a.latitude === "string" &&
+    typeof a.longitude === "string"
+  ) {
+    const nLat = Number(a.latitude);
+    const nLng = Number(a.longitude);
+    if (!Number.isNaN(nLat) && !Number.isNaN(nLng)) {
+      lat = nLat;
+      lng = nLng;
+    }
+  }
+
+  return { lat, lng };
+}
+
+/**
+ * Short location text for UI:
+ * - Prefer human readable name (locationName / location)
+ * - Else show "lat,lng" truncated
+ */
+function formatLocationShort(a) {
+  if (!a) return "";
+  if (typeof a.locationName === "string" && a.locationName.trim()) {
+    return a.locationName.trim();
+  }
+  if (typeof a.location === "string" && a.location.trim()) {
+    return a.location.trim();
+  }
+
+  const { lat, lng } = extractLatLngFromRecord(a);
+  if (lat != null && lng != null) {
+    try {
+      const latStr = Number(lat).toFixed(4);
+      const lngStr = Number(lng).toFixed(4);
+      return `${latStr}, ${lngStr}`;
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+/**
  * Key for map: employeeCode + YYYY-MM-DD
  */
 function cellKeyFor(empCode, day, yearNum, monthNum) {
@@ -620,6 +713,14 @@ export default function AdminAttendanceCalendar() {
                           }`
                         : "";
 
+                      const locShort = a ? formatLocationShort(a) : "";
+
+                      const tooltip = a
+                        ? `${a.status || ""} ${punchText}${
+                            locShort ? " • " + locShort : ""
+                          }`
+                        : "Absent";
+
                       return (
                         <td
                           key={idx}
@@ -632,11 +733,7 @@ export default function AdminAttendanceCalendar() {
                           }}
                         >
                           <div
-                            title={
-                              a
-                                ? `${a.status || ""} ${punchText}`
-                                : "Absent"
-                            }
+                            title={tooltip}
                             style={{
                               width: 56,
                               height: 54,
@@ -659,11 +756,26 @@ export default function AdminAttendanceCalendar() {
                               style={{
                                 fontSize: 10,
                                 color: "#333",
-                                marginTop: 4,
+                                marginTop: 2,
                               }}
                             >
                               {punchText}
                             </div>
+                            {locShort && (
+                              <div
+                                style={{
+                                  fontSize: 8,
+                                  color: "#6b7280",
+                                  marginTop: 1,
+                                  maxWidth: 52,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {locShort}
+                              </div>
+                            )}
                           </div>
                         </td>
                       );
@@ -790,6 +902,34 @@ export default function AdminAttendanceCalendar() {
               />
             </div>
 
+            {/* Location – read-only from punch record */}
+            {cellRecord && (
+              <div className="mb-3">
+                <label className="text-sm">Location (auto-captured)</label>
+                <div className="text-xs text-slate-600">
+                  {formatLocationShort(cellRecord) || "—"}
+                  {(() => {
+                    const { lat, lng } = extractLatLngFromRecord(cellRecord);
+                    if (lat == null || lng == null) return null;
+                    const url = `https://www.google.com/maps?q=${lat},${lng}`;
+                    return (
+                      <>
+                        {" "}
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sky-600 underline"
+                        >
+                          View map
+                        </a>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button
                 onClick={saveCell}
@@ -886,6 +1026,7 @@ export default function AdminAttendanceCalendar() {
                           <th className="p-2">Punch In</th>
                           <th className="p-2">Punch Out</th>
                           <th className="p-2">Status</th>
+                          <th className="p-2">Location</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -916,6 +1057,9 @@ export default function AdminAttendanceCalendar() {
                               </td>
                               <td className="p-2">
                                 {a ? a.status : "absent"}
+                              </td>
+                              <td className="p-2 text-xs">
+                                {a ? formatLocationShort(a) : "-"}
                               </td>
                             </tr>
                           );
