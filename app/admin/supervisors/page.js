@@ -43,16 +43,16 @@ export default function AdminSupervisorsPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const s = await fetch("/api/supervisors/list").then(r => r.json());
+      const s = await fetch("/api/supervisors/list").then((r) => r.json());
       setList(s.supervisors || []);
 
-      const z = await fetch("/api/zones/list").then(r => r.json());
+      const z = await fetch("/api/zones/list").then((r) => r.json());
       setZones(z.zones || []);
 
-      const d = await fetch("/api/divisions/list").then(r => r.json());
+      const d = await fetch("/api/divisions/list").then((r) => r.json());
       setDivisions(d.divisions || []);
 
-      const dept = await fetch("/api/departments/list").then(r => r.json());
+      const dept = await fetch("/api/departments/list").then((r) => r.json());
       setDepartments(dept.departments || []);
     } finally {
       setLoading(false);
@@ -61,7 +61,7 @@ export default function AdminSupervisorsPage() {
 
   // Document Handling
   function setDocField(idx, field, value) {
-    setDocuments(prev => {
+    setDocuments((prev) => {
       const copy = [...prev];
       copy[idx] = { ...copy[idx], [field]: value };
       return copy;
@@ -69,11 +69,26 @@ export default function AdminSupervisorsPage() {
   }
 
   function addDoc() {
-    setDocuments(prev => [...prev, { type: "", url: "" }]);
+    setDocuments((prev) => [...prev, { type: "", url: "" }]);
   }
 
   function removeDoc(idx) {
-    setDocuments(prev => prev.filter((_, i) => i !== idx));
+    setDocuments((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  // Helper: calculate age from dob (YYYY-MM-DD)
+  function calculateAge(dobStr) {
+    if (!dobStr) return null;
+    const dobDate = new Date(dobStr);
+    if (Number.isNaN(dobDate.getTime())) return null;
+
+    const today = new Date();
+    let age = today.getFullYear() - dobDate.getFullYear();
+    const m = today.getMonth() - dobDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+      age--;
+    }
+    return age;
   }
 
   // Create Supervisor
@@ -82,6 +97,15 @@ export default function AdminSupervisorsPage() {
 
     if (!code.trim() || !name.trim() || !mobile.trim() || !password) {
       return alert("Code, Name, Mobile, Password required.");
+    }
+
+    // ✅ DOB < 18 validation
+    if (dob) {
+      const age = calculateAge(dob);
+      if (age !== null && age < 18) {
+        alert("Supervisor is minor (age is less than 18 years).");
+        return;
+      }
     }
 
     const payload = {
@@ -104,13 +128,14 @@ export default function AdminSupervisorsPage() {
       zone,
       division,
       department,
-      documents: documents.filter(d => d.type && d.url)
+      // Only send filled documents
+      documents: documents.filter((d) => d.type && d.url),
     };
 
     const res = await fetch("/api/supervisors/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     const j = await res.json();
@@ -157,7 +182,7 @@ export default function AdminSupervisorsPage() {
     const res = await fetch("/api/supervisors/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     const j = await res.json();
@@ -174,7 +199,7 @@ export default function AdminSupervisorsPage() {
     const res = await fetch("/api/supervisors/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code })
+      body: JSON.stringify({ code }),
     });
 
     const j = await res.json();
@@ -192,7 +217,7 @@ export default function AdminSupervisorsPage() {
     const res = await fetch("/api/supervisors/assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ supervisorCode: code, employeeCode: empCode })
+      body: JSON.stringify({ supervisorCode: code, employeeCode: empCode }),
     });
 
     const j = await res.json();
@@ -212,8 +237,8 @@ export default function AdminSupervisorsPage() {
     // Convert "E1, E2, E3" → ["E1", "E2", "E3"]
     const employeeCodes = input
       .split(",")
-      .map(c => c.trim())
-      .filter(c => c.length > 0);
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
 
     if (employeeCodes.length === 0) {
       return alert("No valid employee codes entered.");
@@ -222,7 +247,7 @@ export default function AdminSupervisorsPage() {
     const res = await fetch("/api/supervisors/bulk-assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ supervisorCode, employeeCodes })
+      body: JSON.stringify({ supervisorCode, employeeCodes }),
     });
 
     const j = await res.json();
@@ -235,42 +260,65 @@ export default function AdminSupervisorsPage() {
 
   return (
     <div className="p-4">
-
       <h1 className="text-2xl font-semibold mb-4">Supervisors</h1>
 
       {/* CREATE FORM */}
       <section className="bg-white p-4 rounded shadow mb-6">
         <form className="grid grid-cols-3 gap-3" onSubmit={createSupervisor}>
-
           <div>
             <label>Code *</label>
-            <input value={code} onChange={e=>setCode(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>Name *</label>
-            <input value={name} onChange={e=>setName(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>Mobile *</label>
-            <input value={mobile} onChange={e=>setMobile(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>Password *</label>
-            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           {/* Optional fields */}
           <div>
             <label>Email</label>
-            <input value={email} onChange={e=>setEmail(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>Gender</label>
-            <select value={gender} onChange={e=>setGender(e.target.value)} className="border px-2 py-2 w-full rounded">
+            <select
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            >
               <option value="">-</option>
               <option value="male">Male</option>
               <option value="female">Female</option>
@@ -280,83 +328,143 @@ export default function AdminSupervisorsPage() {
 
           <div>
             <label>Address</label>
-            <input value={address} onChange={e=>setAddress(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           {/* Dates */}
           <div>
             <label>DOB</label>
-            <input type="date" value={dob} onChange={e=>setDob(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              type="date"
+              value={dob}
+              onChange={(e) => setDob(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>DOJ</label>
-            <input type="date" value={doj} onChange={e=>setDoj(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              type="date"
+              value={doj}
+              onChange={(e) => setDoj(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           {/* ID and Bank fields */}
           <div>
             <label>Aadhar</label>
-            <input value={aadhar} onChange={e=>setAadhar(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={aadhar}
+              onChange={(e) => setAadhar(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>PAN</label>
-            <input value={pan} onChange={e=>setPan(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={pan}
+              onChange={(e) => setPan(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>PF / TF</label>
-            <input value={pfNumber} onChange={e=>setPfNumber(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={pfNumber}
+              onChange={(e) => setPfNumber(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>ESIC</label>
-            <input value={esicNumber} onChange={e=>setEsicNumber(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={esicNumber}
+              onChange={(e) => setEsicNumber(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>Bank Account</label>
-            <input value={bankAccount} onChange={e=>setBankAccount(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={bankAccount}
+              onChange={(e) => setBankAccount(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>IFSC</label>
-            <input value={ifsc} onChange={e=>setIfsc(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={ifsc}
+              onChange={(e) => setIfsc(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           <div>
             <label>Branch</label>
-            <input value={bankBranch} onChange={e=>setBankBranch(e.target.value)} className="border px-2 py-2 w-full rounded" />
+            <input
+              value={bankBranch}
+              onChange={(e) => setBankBranch(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            />
           </div>
 
           {/* Zone / Division / Department */}
           <div>
             <label>Zone</label>
-            <select value={zone} onChange={e=>setZone(e.target.value)} className="border px-2 py-2 w-full rounded">
+            <select
+              value={zone}
+              onChange={(e) => setZone(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            >
               <option value="">—</option>
-              {zones.map(z => (
-                <option key={z._id} value={z.name}>{z.name}</option>
+              {zones.map((z) => (
+                <option key={z._id} value={z.name}>
+                  {z.name}
+                </option>
               ))}
             </select>
           </div>
 
           <div>
             <label>Division</label>
-            <select value={division} onChange={e=>setDivision(e.target.value)} className="border px-2 py-2 w-full rounded">
+            <select
+              value={division}
+              onChange={(e) => setDivision(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            >
               <option value="">—</option>
-              {divisions.map(d => (
-                <option key={d._id} value={d.name}>{d.name}</option>
+              {divisions.map((d) => (
+                <option key={d._id} value={d.name}>
+                  {d.name}
+                </option>
               ))}
             </select>
           </div>
 
           <div>
             <label>Department</label>
-            <select value={department} onChange={e=>setDepartment(e.target.value)} className="border px-2 py-2 w-full rounded">
+            <select
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              className="border px-2 py-2 w-full rounded"
+            >
               <option value="">—</option>
-              {departments.map(d => (
-                <option key={d._id} value={d.name}>{d.name}</option>
+              {departments.map((d) => (
+                <option key={d._id} value={d.name}>
+                  {d.name}
+                </option>
               ))}
             </select>
           </div>
@@ -367,23 +475,50 @@ export default function AdminSupervisorsPage() {
 
             {documents.map((d, idx) => (
               <div key={idx} className="flex gap-2 mb-2">
-                <input placeholder="type" value={d.type} onChange={e=>setDocField(idx,"type",e.target.value)} className="border rounded px-2 py-2 w-1/4" />
-                <input placeholder="url" value={d.url} onChange={e=>setDocField(idx,"url",e.target.value)} className="border rounded px-2 py-2 w-3/4" />
-                <button type="button" onClick={()=>removeDoc(idx)} className="px-2 py-1 text-red-600 border rounded">Remove</button>
+                <input
+                  placeholder="type"
+                  value={d.type}
+                  onChange={(e) => setDocField(idx, "type", e.target.value)}
+                  className="border rounded px-2 py-2 w-1/4"
+                />
+                <input
+                  placeholder="url"
+                  value={d.url}
+                  onChange={(e) => setDocField(idx, "url", e.target.value)}
+                  className="border rounded px-2 py-2 w-3/4"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeDoc(idx)}
+                  className="px-2 py-1 text-red-600 border rounded"
+                >
+                  Remove
+                </button>
               </div>
             ))}
 
-            <button type="button" onClick={addDoc} className="px-3 py-1 bg-sky-700 text-white text-sm rounded">
+            <button
+              type="button"
+              onClick={addDoc}
+              className="px-3 py-1 bg-sky-700 text-white text-sm rounded"
+            >
               Add Document
             </button>
           </div>
 
           {/* Buttons */}
           <div className="col-span-3 flex gap-3 mt-4">
-            <button className="px-4 py-2 bg-sky-700 text-white rounded">Create Supervisor</button>
-            <button type="button" onClick={loadAll} className="px-4 py-2 border rounded">Refresh</button>
+            <button className="px-4 py-2 bg-sky-700 text-white rounded">
+              Create Supervisor
+            </button>
+            <button
+              type="button"
+              onClick={loadAll}
+              className="px-4 py-2 border rounded"
+            >
+              Refresh
+            </button>
           </div>
-
         </form>
       </section>
 
@@ -407,7 +542,7 @@ export default function AdminSupervisorsPage() {
             </thead>
 
             <tbody>
-              {list.map(s => (
+              {list.map((s) => (
                 <tr key={s.code} className="border-b">
                   <td className="p-2">{s.code}</td>
                   <td className="p-2">{s.name}</td>
@@ -416,26 +551,40 @@ export default function AdminSupervisorsPage() {
                   <td className="p-2">{s.division}</td>
 
                   <td className="p-2 flex gap-2">
-                    <button onClick={()=>editSupervisor(s.code)} className="px-2 py-1 bg-yellow-500 text-white rounded text-xs">
+                    <button
+                      onClick={() => editSupervisor(s.code)}
+                      className="px-2 py-1 bg-yellow-500 text-white rounded text-xs"
+                    >
                       Edit
                     </button>
 
-                    <button onClick={()=>deleteSupervisor(s.code)} className="px-2 py-1 bg-red-600 text-white rounded text-xs">
+                    <button
+                      onClick={() => deleteSupervisor(s.code)}
+                      className="px-2 py-1 bg-red-600 text-white rounded text-xs"
+                    >
                       Delete
                     </button>
 
-                    <button onClick={()=>assignEmployee(s.code)} className="px-2 py-1 bg-blue-600 text-white rounded text-xs">
+                    <button
+                      onClick={() => assignEmployee(s.code)}
+                      className="px-2 py-1 bg-blue-600 text-white rounded text-xs"
+                    >
                       Assign
+                    </button>
+
+                    <button
+                      onClick={() => bulkAssign(s.code)}
+                      className="px-2 py-1 bg-emerald-600 text-white rounded text-xs"
+                    >
+                      Bulk Assign
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
-
           </table>
         )}
       </section>
-
     </div>
   );
 }
