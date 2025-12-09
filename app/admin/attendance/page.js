@@ -21,23 +21,28 @@ function dayOfWeekForDate(yyyy, mm, dd) {
   return (jsDay + 6) % 7; // Mon=0 .. Sun=6
 }
 
-function buildAttendanceMap() {
-  const map = {};
-  for (const a of attendance || []) {
-    if (!a || !a.date || !a.employeeCode) continue;
-
-    // IMPORTANT:
-    // a.date is already YYYY-MM-DD (IST based day)
-    // Do NOT convert using Date() or toISOString() (they force UTC)
-    const keyDate = a.date;
-
-    const key = `${a.employeeCode}|${keyDate}`;
-    map[key] = a;
+/**
+ * Show time in **IST (Asia/Kolkata)** always.
+ * Used everywhere in Admin to display punch in/out.
+ */
+function formatTimeShort(ts) {
+  if (!ts) return "";
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "";
   }
-  return map;
 }
 
-
+/**
+ * Key for map: employeeCode + YYYY-MM-DD
+ */
 function cellKeyFor(empCode, day, yearNum, monthNum) {
   const d = new Date(yearNum, monthNum - 1, day);
   return `${empCode}|${d.toISOString().slice(0, 10)}`;
@@ -73,6 +78,12 @@ export default function AdminAttendanceCalendar() {
   const [cellRecord, setCellRecord] = useState(null); // attendance doc for that cell (may be null if none)
   const [saving, setSaving] = useState(false);
 
+  // Drawer form state for editing cell
+  const [formPunchIn, setFormPunchIn] = useState("");
+  const [formPunchOut, setFormPunchOut] = useState("");
+  const [formStatus, setFormStatus] = useState("");
+  const [formNotes, setFormNotes] = useState("");
+
   useEffect(() => {
     loadFilters();
     fetchEmployees();
@@ -86,13 +97,24 @@ export default function AdminAttendanceCalendar() {
 
   async function loadFilters() {
     try {
-      const z = await fetch("/api/zones/list").then((r) => r.json()).catch(() => ({ zones: [] }));
+      const z = await fetch("/api/zones/list")
+        .then((r) => r.json())
+        .catch(() => ({ zones: [] }));
       setZones(z.zones || []);
-      const d = await fetch("/api/divisions/list").then((r) => r.json()).catch(() => ({ divisions: [] }));
+
+      const d = await fetch("/api/divisions/list")
+        .then((r) => r.json())
+        .catch(() => ({ divisions: [] }));
       setDivisions(d.divisions || []);
-      const dept = await fetch("/api/departments/list").then((r) => r.json()).catch(() => ({ departments: [] }));
+
+      const dept = await fetch("/api/departments/list")
+        .then((r) => r.json())
+        .catch(() => ({ departments: [] }));
       setDepartments(dept.departments || []);
-      const s = await fetch("/api/supervisors/list").then((r) => r.json()).catch(() => ({ supervisors: [] }));
+
+      const s = await fetch("/api/supervisors/list")
+        .then((r) => r.json())
+        .catch(() => ({ supervisors: [] }));
       setSupervisors(s.supervisors || []);
     } catch (err) {
       console.error("loadFilters", err);
@@ -134,14 +156,18 @@ export default function AdminAttendanceCalendar() {
     const map = {};
     for (const a of attendance || []) {
       if (!a || !a.date || !a.employeeCode) continue;
+
+      // IMPORTANT:
+      // a.date is already YYYY-MM-DD (day from server in IST logic).
+      // Do NOT convert with new Date(...).toISOString() (that moves day in UTC).
       const keyDate = a.date;
 
-      
       const key = `${a.employeeCode}|${keyDate}`;
       map[key] = a;
     }
     return map;
   }
+
   const attMap = buildAttendanceMap();
 
   // filtered employee list
@@ -150,7 +176,8 @@ export default function AdminAttendanceCalendar() {
     if (division && e.division !== division) return false;
     if (department && e.department !== department) return false;
     if (supervisor && e.supervisorCode !== supervisor) return false;
-    if (q && !(`${e.name} ${e.code}`.toLowerCase().includes(q.toLowerCase()))) return false;
+    if (q && !(`${e.name} ${e.code}`.toLowerCase().includes(q.toLowerCase())))
+      return false;
     return true;
   });
 
@@ -161,6 +188,7 @@ export default function AdminAttendanceCalendar() {
   const days = daysInMonth(yearNum, monthNum);
   // week day of 1st (Mon=0..Sun=6)
   const firstWeekday = dayOfWeekForDate(yearNum, monthNum, 1);
+  // firstWeekday currently not used but kept for future layout tweaks
 
   function openCellDrawer(emp, day) {
     const key = cellKeyFor(emp.code, day, yearNum, monthNum);
@@ -200,29 +228,29 @@ export default function AdminAttendanceCalendar() {
     return { present, absent, leave, incomplete, total };
   }
 
-  // Drawer form state for editing cell
-  const [formPunchIn, setFormPunchIn] = useState("");
-  const [formPunchOut, setFormPunchOut] = useState("");
-  const [formStatus, setFormStatus] = useState("");
-  const [formNotes, setFormNotes] = useState("");
-
   // when drawer opens in cell mode, populate form
   useEffect(() => {
     if (!drawerOpen) return;
     if (drawerMode === "cell") {
       if (cellRecord) {
-        setFormPunchIn(cellRecord.punchIn
-  ? new Date(cellRecord.punchIn).toLocaleString("sv-SE").slice(0, 16)
-  : ""
-);
+        // Convert stored Date/string -> value for <input type="datetime-local">
+        // Using "sv-SE" keeps format "YYYY-MM-DDTHH:mm"
+        setFormPunchIn(
+          cellRecord.punchIn
+            ? new Date(cellRecord.punchIn)
+                .toLocaleString("sv-SE")
+                .slice(0, 16)
+            : ""
+        );
 
-setFormPunchOut(cellRecord.punchOut
-  ? new Date(cellRecord.punchOut).toLocaleString("sv-SE").slice(0, 16)
-  : ""
-);
+        setFormPunchOut(
+          cellRecord.punchOut
+            ? new Date(cellRecord.punchOut)
+                .toLocaleString("sv-SE")
+                .slice(0, 16)
+            : ""
+        );
 
-        
-        
         setFormStatus(cellRecord.status || "");
         setFormNotes(cellRecord.notes || "");
       } else {
@@ -244,7 +272,8 @@ setFormPunchOut(cellRecord.punchOut
 
   // Save handler — either create/update attendance for a specific date
   async function saveCell() {
-    if (!activeEmployee || !activeDay) return alert("No employee/day selected");
+    if (!activeEmployee || !activeDay)
+      return alert("No employee/day selected");
     setSaving(true);
     try {
       // build ISO date for selected day
@@ -257,9 +286,11 @@ setFormPunchOut(cellRecord.punchOut
         date: dateISO,
       };
 
+      // Browser gives local time (IST for your users). new Date(...) keeps that
+      // and JSON.stringify will send ISO string to API.
       if (formPunchIn) payload.punchIn = new Date(formPunchIn);
       if (formPunchOut) payload.punchOut = new Date(formPunchOut);
-      
+
       if (formStatus) payload.status = formStatus;
       if (formNotes) payload.notes = formNotes;
 
@@ -271,9 +302,11 @@ setFormPunchOut(cellRecord.punchOut
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "save failed");
 
-      // ensure UI picks up updated values — refresh twice (immediate + shortly after) to avoid eventual consistency/caching
+      // ensure UI picks up updated values — refresh twice (immediate + shortly after)
       await fetchAttendance();
-      setTimeout(() => { fetchAttendance(); }, 400);
+      setTimeout(() => {
+        fetchAttendance();
+      }, 400);
 
       alert("Saved");
       setDrawerOpen(false);
@@ -299,7 +332,9 @@ setFormPunchOut(cellRecord.punchOut
 
       // Refresh immediately and again shortly after to ensure UI shows the change
       await fetchAttendance();
-      setTimeout(() => { fetchAttendance(); }, 400);
+      setTimeout(() => {
+        fetchAttendance();
+      }, 400);
 
       alert("Deleted");
       setDrawerOpen(false);
@@ -330,61 +365,136 @@ setFormPunchOut(cellRecord.punchOut
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-xl font-semibold">Attendance — Calendar</h2>
-            <div className="text-sm text-slate-500">Month: <strong>{month}</strong></div>
+            <div className="text-sm text-slate-500">
+              Month: <strong>{month}</strong>
+            </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={fetchAttendance} className="px-3 py-1 border rounded">Refresh</button>
-            <button onClick={exportCSV} className="px-3 py-1 border rounded">Export CSV</button>
+            <button
+              onClick={fetchAttendance}
+              className="px-3 py-1 border rounded"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={exportCSV}
+              className="px-3 py-1 border rounded"
+            >
+              Export CSV
+            </button>
           </div>
         </div>
 
         <div className="mb-3">
           <label className="text-sm">Month</label>
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="border px-2 py-1 rounded w-full" />
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="border px-2 py-1 rounded w-full"
+          />
         </div>
 
         <div className="flex gap-2 mb-3">
-          <select value={zone} onChange={(e) => setZone(e.target.value)} className="border px-2 py-1 rounded w-full">
+          <select
+            value={zone}
+            onChange={(e) => setZone(e.target.value)}
+            className="border px-2 py-1 rounded w-full"
+          >
             <option value="">All Zones</option>
-            {zones.map((z) => <option key={z._id} value={z.name}>{z.name}</option>)}
+            {zones.map((z) => (
+              <option key={z._id} value={z.name}>
+                {z.name}
+              </option>
+            ))}
           </select>
         </div>
 
         <div className="flex gap-2 mb-3">
-          <select value={division} onChange={(e) => setDivision(e.target.value)} className="border px-2 py-1 rounded w-1/2">
+          <select
+            value={division}
+            onChange={(e) => setDivision(e.target.value)}
+            className="border px-2 py-1 rounded w-1/2"
+          >
             <option value="">All Divisions</option>
-            {divisions.map((d) => <option key={d._id} value={d.name}>{d.name}</option>)}
+            {divisions.map((d) => (
+              <option key={d._id} value={d.name}>
+                {d.name}
+              </option>
+            ))}
           </select>
-          <select value={department} onChange={(e) => setDepartment(e.target.value)} className="border px-2 py-1 rounded w-1/2">
+          <select
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            className="border px-2 py-1 rounded w-1/2"
+          >
             <option value="">All Departments</option>
-            {departments.map((d) => <option key={d._id} value={d.name}>{d.name}</option>)}
+            {departments.map((d) => (
+              <option key={d._id} value={d.name}>
+                {d.name}
+              </option>
+            ))}
           </select>
         </div>
 
         <div className="mb-3">
-          <select value={supervisor} onChange={(e) => setSupervisor(e.target.value)} className="border px-2 py-1 rounded w-full">
+          <select
+            value={supervisor}
+            onChange={(e) => setSupervisor(e.target.value)}
+            className="border px-2 py-1 rounded w-full"
+          >
             <option value="">All Supervisors</option>
-            {supervisors.map((s) => <option key={s.code} value={s.code}>{s.name} — {s.code}</option>)}
+            {supervisors.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name} — {s.code}
+              </option>
+            ))}
           </select>
         </div>
 
         <div className="mb-3">
-          <input placeholder="Search name or code" value={q} onChange={(e) => setQ(e.target.value)} className="border px-2 py-1 rounded w-full" />
+          <input
+            placeholder="Search name or code"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="border px-2 py-1 rounded w-full"
+          />
         </div>
 
-        <div style={{ maxHeight: "60vh", overflowY: "auto", borderTop: "1px solid #eee", paddingTop: 8 }}>
-          {loading ? <div>Loading employees…</div> : filteredEmployees.length === 0 ? <div className="text-sm text-slate-500 p-2">No employees</div> : (
+        <div
+          style={{
+            maxHeight: "60vh",
+            overflowY: "auto",
+            borderTop: "1px solid #eee",
+            paddingTop: 8,
+          }}
+        >
+          {loading ? (
+            <div>Loading employees…</div>
+          ) : filteredEmployees.length === 0 ? (
+            <div className="text-sm text-slate-500 p-2">No employees</div>
+          ) : (
             filteredEmployees.map((emp) => {
               const summary = computeEmployeeSummary(emp);
               return (
-                <div key={emp.code} className="p-2 border-b flex items-center justify-between" style={{ cursor: "pointer" }}>
+                <div
+                  key={emp.code}
+                  className="p-2 border-b flex items-center justify-between"
+                  style={{ cursor: "pointer" }}
+                >
                   <div onClick={() => openEmployeeDrawer(emp)}>
                     <div style={{ fontWeight: 700 }}>{emp.name}</div>
-                    <div style={{ fontSize: 12, color: "#666" }}>{emp.code} • {emp.supervisorCode || "-"}</div>
+                    <div style={{ fontSize: 12, color: "#666" }}>
+                      {emp.code} • {emp.supervisorCode || "-"}
+                    </div>
                   </div>
                   <div style={{ textAlign: "right", minWidth: 70 }}>
-                    <div style={{ fontSize: 12 }}>P: <strong>{summary.present}</strong></div>
-                    <div style={{ fontSize: 12 }}>A: <strong>{summary.absent}</strong></div>
+                    <div style={{ fontSize: 12 }}>
+                      P: <strong>{summary.present}</strong>
+                    </div>
+                    <div style={{ fontSize: 12 }}>
+                      A: <strong>{summary.absent}</strong>
+                    </div>
                   </div>
                 </div>
               );
@@ -395,20 +505,57 @@ setFormPunchOut(cellRecord.punchOut
 
       {/* Right: calendar grid */}
       <div style={{ flex: 1, overflowX: "auto" }}>
-        <div style={{ overflowX: "auto", border: "1px solid #e6e6e6", borderRadius: 6 }}>
-          <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: Math.max(900, days * 56 + 300) }}>
+        <div
+          style={{
+            overflowX: "auto",
+            border: "1px solid #e6e6e6",
+            borderRadius: 6,
+          }}
+        >
+          <table
+            className="w-full text-sm"
+            style={{
+              borderCollapse: "collapse",
+              minWidth: Math.max(900, days * 56 + 300),
+            }}
+          >
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                <th style={{ position: "sticky", left: 0, background: "#fff", zIndex: 3, borderRight: "1px solid #eee", padding: 8, minWidth: 220 }}>Employee</th>
+                <th
+                  style={{
+                    position: "sticky",
+                    left: 0,
+                    background: "#fff",
+                    zIndex: 3,
+                    borderRight: "1px solid #eee",
+                    padding: 8,
+                    minWidth: 220,
+                  }}
+                >
+                  Employee
+                </th>
                 {/* Render day numbers header with weekday label above each date */}
                 {Array.from({ length: days }).map((_, idx) => {
                   const day = idx + 1;
                   const jsDate = new Date(yearNum, monthNum - 1, day);
                   const weekdayIdx = (jsDate.getDay() + 6) % 7;
                   return (
-                    <th key={idx} style={{ padding: 6, textAlign: "center", minWidth: 56 }}>
-                      <div style={{ fontSize: 11, color: "#666" }}>{weekdayNames[weekdayIdx]}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700 }}>{day}</div>
+                    <th
+                      key={idx}
+                      style={{
+                        padding: 6,
+                        textAlign: "center",
+                        minWidth: 56,
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: "#666" }}>
+                        {weekdayNames[weekdayIdx]}
+                      </div>
+                      <div
+                        style={{ fontSize: 13, fontWeight: 700 }}
+                      >
+                        {day}
+                      </div>
                     </th>
                   );
                 })}
@@ -417,18 +564,42 @@ setFormPunchOut(cellRecord.punchOut
 
             <tbody>
               {filteredEmployees.length === 0 ? (
-                <tr><td colSpan={days + 1} className="p-4">No employees for selected filters</td></tr>
+                <tr>
+                  <td colSpan={days + 1} className="p-4">
+                    No employees for selected filters
+                  </td>
+                </tr>
               ) : (
                 filteredEmployees.map((emp) => (
-                  <tr key={emp.code} style={{ borderTop: "1px solid #f1f5f9" }}>
-                    <td style={{ position: "sticky", left: 0, background: "#fff", zIndex: 2, padding: 8, borderRight: "1px solid #eee", minWidth: 220 }}>
+                  <tr
+                    key={emp.code}
+                    style={{ borderTop: "1px solid #f1f5f9" }}
+                  >
+                    <td
+                      style={{
+                        position: "sticky",
+                        left: 0,
+                        background: "#fff",
+                        zIndex: 2,
+                        padding: 8,
+                        borderRight: "1px solid #eee",
+                        minWidth: 220,
+                      }}
+                    >
                       <div style={{ fontWeight: 700 }}>{emp.name}</div>
-                      <div style={{ fontSize: 12, color: "#666" }}>{emp.code} — {emp.supervisorCode || "-"}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>
+                        {emp.code} — {emp.supervisorCode || "-"}
+                      </div>
                     </td>
 
                     {Array.from({ length: days }).map((_, idx) => {
                       const day = idx + 1;
-                      const key = cellKeyFor(emp.code, day, yearNum, monthNum);
+                      const key = cellKeyFor(
+                        emp.code,
+                        day,
+                        yearNum,
+                        monthNum
+                      );
                       const a = attMap[key];
 
                       const label = (() => {
@@ -441,13 +612,58 @@ setFormPunchOut(cellRecord.punchOut
                         return "A";
                       })();
 
-                      const punchText = a ? `${formatTimeShort(a.punchIn)}${a.punchOut ? " / " + formatTimeShort(a.punchOut) : ""}` : "";
+                      const punchText = a
+                        ? `${formatTimeShort(a.punchIn)}${
+                            a.punchOut
+                              ? " / " + formatTimeShort(a.punchOut)
+                              : ""
+                          }`
+                        : "";
 
                       return (
-                        <td key={idx} onClick={() => openCellDrawer(emp, day)} style={{ padding: 6, textAlign: "center", cursor: "pointer", verticalAlign: "top" }}>
-                          <div title={a ? `${a.status || ""} ${punchText}` : "Absent"} style={{ width: 56, height: 54, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRadius: 6 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700 }}>{label}</div>
-                            <div style={{ fontSize: 10, color: "#333", marginTop: 4 }}>{punchText}</div>
+                        <td
+                          key={idx}
+                          onClick={() => openCellDrawer(emp, day)}
+                          style={{
+                            padding: 6,
+                            textAlign: "center",
+                            cursor: "pointer",
+                            verticalAlign: "top",
+                          }}
+                        >
+                          <div
+                            title={
+                              a
+                                ? `${a.status || ""} ${punchText}`
+                                : "Absent"
+                            }
+                            style={{
+                              width: 56,
+                              height: 54,
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              borderRadius: 6,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {label}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "#333",
+                                marginTop: 4,
+                              }}
+                            >
+                              {punchText}
+                            </div>
                           </div>
                         </td>
                       );
@@ -461,23 +677,49 @@ setFormPunchOut(cellRecord.punchOut
       </div>
 
       {/* Right-side drawer */}
-      <div style={{
-        position: "fixed",
-        top: 0,
-        right: drawerOpen ? 0 : "-520px",
-        width: 520,
-        height: "100vh",
-        background: "#fff",
-        boxShadow: "-8px 0 24px rgba(0,0,0,0.08)",
-        transition: "right 220ms ease",
-        zIndex: 90,
-        padding: 16,
-        overflowY: "auto"
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontWeight: 700 }}>{drawerMode === "cell" ? `Edit — ${activeEmployee ? activeEmployee.name : ""} ${activeDay ? `(${month}-${String(activeDay).padStart(2,"0")})` : ""}` : (activeEmployee ? `${activeEmployee.name} — Summary` : "Employee")}</div>
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          right: drawerOpen ? 0 : "-520px",
+          width: 520,
+          height: "100vh",
+          background: "#fff",
+          boxShadow: "-8px 0 24px rgba(0,0,0,0.08)",
+          transition: "right 220ms ease",
+          zIndex: 90,
+          padding: 16,
+          overflowY: "auto",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>
+            {drawerMode === "cell"
+              ? `Edit — ${
+                  activeEmployee ? activeEmployee.name : ""
+                } ${
+                  activeDay
+                    ? `(${month}-${String(activeDay).padStart(2, "0")})`
+                    : ""
+                }`
+              : activeEmployee
+              ? `${activeEmployee.name} — Summary`
+              : "Employee"}
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setDrawerOpen(false)} className="px-3 py-1 border rounded">Close</button>
+            <button
+              onClick={() => setDrawerOpen(false)}
+              className="px-3 py-1 border rounded"
+            >
+              Close
+            </button>
           </div>
         </div>
 
@@ -485,28 +727,51 @@ setFormPunchOut(cellRecord.punchOut
           <div>
             <div className="mb-3">
               <label className="text-sm">Employee</label>
-              <div style={{ fontWeight: 700 }}>{activeEmployee?.name} <span className="text-slate-500">({activeEmployee?.code})</span></div>
-              <div className="text-xs text-slate-500">{activeEmployee?.supervisorCode || "-"}</div>
+              <div style={{ fontWeight: 700 }}>
+                {activeEmployee?.name}{" "}
+                <span className="text-slate-500">
+                  ({activeEmployee?.code})
+                </span>
+              </div>
+              <div className="text-xs text-slate-500">
+                {activeEmployee?.supervisorCode || "-"}
+              </div>
             </div>
 
             <div className="mb-3">
               <label className="text-sm">Date</label>
-              <div>{month} - {activeDay}</div>
+              <div>
+                {month} - {activeDay}
+              </div>
             </div>
 
             <div className="mb-3">
               <label className="text-sm">Punch In</label>
-              <input type="datetime-local" value={formPunchIn} onChange={(e) => setFormPunchIn(e.target.value)} className="border px-2 py-2 rounded w-full" />
+              <input
+                type="datetime-local"
+                value={formPunchIn}
+                onChange={(e) => setFormPunchIn(e.target.value)}
+                className="border px-2 py-2 rounded w-full"
+              />
             </div>
 
             <div className="mb-3">
               <label className="text-sm">Punch Out</label>
-              <input type="datetime-local" value={formPunchOut} onChange={(e) => setFormPunchOut(e.target.value)} className="border px-2 py-2 rounded w-full" />
+              <input
+                type="datetime-local"
+                value={formPunchOut}
+                onChange={(e) => setFormPunchOut(e.target.value)}
+                className="border px-2 py-2 rounded w-full"
+              />
             </div>
 
             <div className="mb-3">
               <label className="text-sm">Status</label>
-              <select value={formStatus} onChange={(e) => setFormStatus(e.target.value)} className="border px-2 py-2 rounded w-full">
+              <select
+                value={formStatus}
+                onChange={(e) => setFormStatus(e.target.value)}
+                className="border px-2 py-2 rounded w-full"
+              >
                 <option value="">(auto)</option>
                 <option value="present">present</option>
                 <option value="absent">absent</option>
@@ -517,12 +782,30 @@ setFormPunchOut(cellRecord.punchOut
 
             <div className="mb-3">
               <label className="text-sm">Notes</label>
-              <textarea value={formNotes} onChange={(e) => setFormNotes(e.target.value)} className="border px-2 py-2 rounded w-full" rows={3} />
+              <textarea
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+                className="border px-2 py-2 rounded w-full"
+                rows={3}
+              />
             </div>
 
             <div className="flex gap-2">
-              <button onClick={saveCell} disabled={saving} className="px-4 py-2 bg-sky-700 text-white rounded">{saving ? "Saving..." : "Save"}</button>
-              {cellRecord && cellRecord._id && <button onClick={deleteCellRecord} className="px-4 py-2 border rounded text-red-600">Delete</button>}
+              <button
+                onClick={saveCell}
+                disabled={saving}
+                className="px-4 py-2 bg-sky-700 text-white rounded"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
+              {cellRecord && cellRecord._id && (
+                <button
+                  onClick={deleteCellRecord}
+                  className="px-4 py-2 border rounded text-red-600"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -530,24 +813,72 @@ setFormPunchOut(cellRecord.punchOut
           <div>
             {activeEmployee ? (
               <div>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>{activeEmployee.name} <span className="text-slate-500">({activeEmployee.code})</span></div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    marginBottom: 6,
+                  }}
+                >
+                  {activeEmployee.name}{" "}
+                  <span className="text-slate-500">
+                    ({activeEmployee.code})
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
                   {(() => {
                     const s = computeEmployeeSummary(activeEmployee);
                     return (
                       <>
-                        <div className="p-2 border rounded"><div className="text-sm">Present</div><div style={{ fontWeight: 700 }}>{s.present}</div></div>
-                        <div className="p-2 border rounded"><div className="text-sm">Absent</div><div style={{ fontWeight: 700 }}>{s.absent}</div></div>
-                        <div className="p-2 border rounded"><div className="text-sm">Leave</div><div style={{ fontWeight: 700 }}>{s.leave}</div></div>
-                        <div className="p-2 border rounded"><div className="text-sm">Incomplete</div><div style={{ fontWeight: 700 }}>{s.incomplete}</div></div>
+                        <div className="p-2 border rounded">
+                          <div className="text-sm">Present</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {s.present}
+                          </div>
+                        </div>
+                        <div className="p-2 border rounded">
+                          <div className="text-sm">Absent</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {s.absent}
+                          </div>
+                        </div>
+                        <div className="p-2 border rounded">
+                          <div className="text-sm">Leave</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {s.leave}
+                          </div>
+                        </div>
+                        <div className="p-2 border rounded">
+                          <div className="text-sm">Incomplete</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {s.incomplete}
+                          </div>
+                        </div>
                       </>
                     );
                   })()}
                 </div>
 
                 <div>
-                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Detailed</div>
-                  <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      marginBottom: 6,
+                    }}
+                  >
+                    Detailed
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: "50vh",
+                      overflowY: "auto",
+                    }}
+                  >
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-slate-600 border-b">
@@ -560,15 +891,32 @@ setFormPunchOut(cellRecord.punchOut
                       <tbody>
                         {Array.from({ length: days }).map((_, idx) => {
                           const d = idx + 1;
-                          const key = cellKeyFor(activeEmployee.code, d, yearNum, monthNum);
+                          const key = cellKeyFor(
+                            activeEmployee.code,
+                            d,
+                            yearNum,
+                            monthNum
+                          );
                           const a = attMap[key];
-                          const dateStr = new Date(yearNum, monthNum - 1, d).toISOString().slice(0, 10);
+                          const dateStr = new Date(
+                            yearNum,
+                            monthNum - 1,
+                            d
+                          )
+                            .toISOString()
+                            .slice(0, 10);
                           return (
                             <tr key={d} className="border-b">
                               <td className="p-2">{dateStr}</td>
-                              <td className="p-2">{a ? formatTimeShort(a.punchIn) : "-"}</td>
-                              <td className="p-2">{a ? formatTimeShort(a.punchOut) : "-"}</td>
-                              <td className="p-2">{a ? a.status : "absent"}</td>
+                              <td className="p-2">
+                                {a ? formatTimeShort(a.punchIn) : "-"}
+                              </td>
+                              <td className="p-2">
+                                {a ? formatTimeShort(a.punchOut) : "-"}
+                              </td>
+                              <td className="p-2">
+                                {a ? a.status : "absent"}
+                              </td>
                             </tr>
                           );
                         })}
@@ -577,7 +925,9 @@ setFormPunchOut(cellRecord.punchOut
                   </div>
                 </div>
               </div>
-            ) : <div>No employee selected</div>}
+            ) : (
+              <div>No employee selected</div>
+            )}
           </div>
         )}
       </div>
