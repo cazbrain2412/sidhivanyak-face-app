@@ -2,6 +2,23 @@
 
 import { useEffect, useState } from "react";
 
+// --------- helpers ----------
+
+// return true if DOB makes age < 18
+function isMinor(dobStr) {
+  if (!dobStr) return false;
+  const dob = new Date(dobStr);
+  if (Number.isNaN(dob.getTime())) return false;
+
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+    age--;
+  }
+  return age < 18;
+}
+
 export default function AdminSupervisorsPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +47,7 @@ export default function AdminSupervisorsPage() {
   const [department, setDepartment] = useState("");
   const [password, setPassword] = useState("");
 
+  // documents: array of { type, url }
   const [documents, setDocuments] = useState([{ type: "", url: "" }]);
 
   const [zones, setZones] = useState([]);
@@ -59,7 +77,8 @@ export default function AdminSupervisorsPage() {
     }
   }
 
-  // Document Handling
+  // --------- Documents handling ----------
+
   function setDocField(idx, field, value) {
     setDocuments((prev) => {
       const copy = [...prev];
@@ -76,37 +95,40 @@ export default function AdminSupervisorsPage() {
     setDocuments((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  // Helper: calculate age from dob (YYYY-MM-DD)
-  function calculateAge(dobStr) {
-    if (!dobStr) return null;
-    const dobDate = new Date(dobStr);
-    if (Number.isNaN(dobDate.getTime())) return null;
+  // --------- Create Supervisor ----------
 
-    const today = new Date();
-    let age = today.getFullYear() - dobDate.getFullYear();
-    const m = today.getMonth() - dobDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
-      age--;
-    }
-    return age;
-  }
-
-  // Create Supervisor
   async function createSupervisor(e) {
     e.preventDefault();
 
     if (!code.trim() || !name.trim() || !mobile.trim() || !password) {
-      return alert("Code, Name, Mobile, Password required.");
+      alert("Code, Name, Mobile, Password are required.");
+      return;
     }
 
-    // ✅ DOB < 18 validation
+    // DOB validation: must be 18+
     if (dob) {
-      const age = calculateAge(dob);
-      if (age !== null && age < 18) {
-        alert("Supervisor is minor (age is less than 18 years).");
+      const dobDate = new Date(dob);
+      if (Number.isNaN(dobDate.getTime())) {
+        alert("Please select a valid Date of Birth.");
+        return;
+      }
+      // no future DOB
+      if (dobDate > new Date()) {
+        alert("Date of Birth cannot be in the future.");
+        return;
+      }
+      if (isMinor(dob)) {
+        alert("Supervisor is minor (age < 18). Please enter an 18+ Date of Birth.");
         return;
       }
     }
+
+    const cleanedDocuments = documents
+      .map((d) => ({
+        type: (d.type || "").trim(),
+        url: (d.url || "").trim(),
+      }))
+      .filter((d) => d.type && d.url);
 
     const payload = {
       code: code.trim(),
@@ -128,8 +150,8 @@ export default function AdminSupervisorsPage() {
       zone,
       division,
       department,
-      // Only send filled documents
-      documents: documents.filter((d) => d.type && d.url),
+      // IMPORTANT: this is now always an array with only filled rows
+      documents: cleanedDocuments,
     };
 
     const res = await fetch("/api/supervisors/create", {
@@ -172,7 +194,8 @@ export default function AdminSupervisorsPage() {
     setDocuments([{ type: "", url: "" }]);
   }
 
-  // Edit Supervisor
+  // --------- Edit / Delete / Assign ----------
+
   async function editSupervisor(code) {
     const newName = prompt("Enter new name:");
     if (!newName) return;
@@ -192,7 +215,6 @@ export default function AdminSupervisorsPage() {
     loadAll();
   }
 
-  // Delete Supervisor
   async function deleteSupervisor(code) {
     if (!confirm("Are you sure you want to delete this supervisor?")) return;
 
@@ -209,7 +231,6 @@ export default function AdminSupervisorsPage() {
     loadAll();
   }
 
-  // Assign Employee → Supervisor
   async function assignEmployee(code) {
     const empCode = prompt("Enter employee code to assign:");
     if (!empCode) return;
@@ -226,22 +247,20 @@ export default function AdminSupervisorsPage() {
     alert("Employee assigned successfully!");
   }
 
-  // BULK ASSIGN MULTIPLE EMPLOYEES
   async function bulkAssign(supervisorCode) {
     const input = prompt(
       "Enter multiple employee codes separated by commas\nExample: E001, E002, E003"
     );
-
     if (!input) return;
 
-    // Convert "E1, E2, E3" → ["E1", "E2", "E3"]
     const employeeCodes = input
       .split(",")
       .map((c) => c.trim())
       .filter((c) => c.length > 0);
 
     if (employeeCodes.length === 0) {
-      return alert("No valid employee codes entered.");
+      alert("No valid employee codes entered.");
+      return;
     }
 
     const res = await fetch("/api/supervisors/bulk-assign", {
@@ -252,11 +271,14 @@ export default function AdminSupervisorsPage() {
 
     const j = await res.json();
     if (!res.ok) {
-      return alert(j.error || "Bulk assign failed");
+      alert(j.error || "Bulk assign failed");
+      return;
     }
 
     alert(`Bulk assign successful! Updated: ${j.updatedCount} employees`);
   }
+
+  // --------- UI ----------
 
   return (
     <div className="p-4">
@@ -337,7 +359,10 @@ export default function AdminSupervisorsPage() {
 
           {/* Dates */}
           <div>
-            <label>DOB</label>
+            <label>
+              DOB{" "}
+              <span className="text-xs text-slate-500">(18+ required)</span>
+            </label>
             <input
               type="date"
               value={dob}
@@ -471,7 +496,12 @@ export default function AdminSupervisorsPage() {
 
           {/* Documents */}
           <div className="col-span-3">
-            <label className="text-sm">Documents (type + URL)</label>
+            <label className="text-sm">
+              Documents (type + URL){" "}
+              <span className="text-xs text-slate-500">
+                (example: Aadhaar PDF, Google Drive link)
+              </span>
+            </label>
 
             {documents.map((d, idx) => (
               <div key={idx} className="flex gap-2 mb-2">
@@ -570,13 +600,6 @@ export default function AdminSupervisorsPage() {
                       className="px-2 py-1 bg-blue-600 text-white rounded text-xs"
                     >
                       Assign
-                    </button>
-
-                    <button
-                      onClick={() => bulkAssign(s.code)}
-                      className="px-2 py-1 bg-emerald-600 text-white rounded text-xs"
-                    >
-                      Bulk Assign
                     </button>
                   </td>
                 </tr>
