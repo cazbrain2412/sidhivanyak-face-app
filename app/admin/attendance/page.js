@@ -21,15 +21,22 @@ function dayOfWeekForDate(yyyy, mm, dd) {
   return (jsDay + 6) % 7; // Mon=0 .. Sun=6
 }
 
-function formatTimeShort(ts) {
-  if (!ts) return "";
-  try {
-    const d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return ts;
+function buildAttendanceMap() {
+  const map = {};
+  for (const a of attendance || []) {
+    if (!a || !a.date || !a.employeeCode) continue;
+
+    // IMPORTANT:
+    // a.date is already YYYY-MM-DD (IST based day)
+    // Do NOT convert using Date() or toISOString() (they force UTC)
+    const keyDate = a.date;
+
+    const key = `${a.employeeCode}|${keyDate}`;
+    map[key] = a;
   }
+  return map;
 }
+
 
 function cellKeyFor(empCode, day, yearNum, monthNum) {
   const d = new Date(yearNum, monthNum - 1, day);
