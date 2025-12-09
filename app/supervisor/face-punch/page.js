@@ -13,7 +13,6 @@ function SupervisorFacePunchInner() {
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-
   const [status, setStatus] = useState("initialising camera...");
   const [threshold, setThreshold] = useState(0.65);
   const [modelsLoaded, setModelsLoaded] = useState(false);
@@ -21,15 +20,15 @@ function SupervisorFacePunchInner() {
   const [matchedEmp, setMatchedEmp] = useState(null);
   const [distance, setDistance] = useState(null);
   const [busy, setBusy] = useState(false);
+
   const [lastActionInfo, setLastActionInfo] = useState("");
 
-  // 🔵 LOCATION STATE
-  const [geo, setGeo] = useState(null); // { latitude, longitude }
-  const [geoMessage, setGeoMessage] = useState(
-    "Location not captured yet. It will be requested on punch."
-  );
+  // NEW: location state
+  const [locationStatus, setLocationStatus] = useState("");
+  const [lastLocation, setLastLocation] = useState(null); // { lat, lng, accuracy }
 
   // ---------- CAMERA + MODELS ----------
+
   useEffect(() => {
     let cancelled = false;
 
@@ -81,43 +80,33 @@ function SupervisorFacePunchInner() {
     };
   }, []);
 
-  // ---------- LOCATION HELPER ----------
+  // ---------- LOCATION (ONE-SHOT, PER PUNCH) ----------
 
-  function requestLocationOnce() {
-    return new Promise((resolve) => {
+  function getLocationOnce() {
+    return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        setGeoMessage("This device does not support location (no GPS).");
-        resolve(null);
-        return;
+        return reject(new Error("Geolocation not supported on this device"));
       }
 
-      setGeoMessage("Requesting current location…");
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const { latitude, longitude } = pos.coords;
-          const loc = { latitude, longitude };
-          setGeo(loc);
-          setGeoMessage(
-            `Location ready: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-          );
-          resolve(loc);
+          const coords = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          };
+          resolve(coords);
         },
         (err) => {
-          console.error("geolocation error", err);
-          setGeoMessage("Location error: " + err.message);
-          resolve(null);
+          reject(err);
         },
         {
-          enableHighAccuracy: true,
-          timeout: 15000,
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0,
         }
       );
     });
-  }
-
-  // button handler (optional manual click)
-  async function handleGetLocation() {
-    await requestLocationOnce();
   }
 
   // ---------- FACE CAPTURE & ATTENDANCE ----------
@@ -160,24 +149,34 @@ function SupervisorFacePunchInner() {
     if (busy) return;
     setBusy(true);
     setLastActionInfo("");
+    setLocationStatus("");
 
     try {
-      // 1) Ensure we have location – this will trigger browser "Allow location" popup
-      let loc = geo;
-      if (!loc) {
-        loc = await requestLocationOnce();
-      }
-      if (!loc) {
-        setStatus("Please allow location permission to mark attendance.");
-        setBusy(false);
-        return;
-      }
-
-      // 2) Capture face descriptor
+      // 1) capture face
       const descriptor = await captureDescriptor();
       if (!descriptor) {
         setBusy(false);
         return;
+      }
+
+      // 2) get location ONCE per punch
+      let location = null;
+      try {
+        setLocationStatus("Getting current location… please allow location access.");
+        const coords = await getLocationOnce();
+        setLastLocation(coords);
+        setLocationStatus(
+          `Location captured: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)} (±${Math.round(
+            coords.accuracy || 0
+          )}m)`
+        );
+        location = coords;
+      } catch (locErr) {
+        console.warn("location error", locErr);
+        setLocationStatus(
+          "Location not available: " + (locErr.message || "please check GPS / permissions")
+        );
+        // We still continue – attendance is marked even if location fails
       }
 
       setStatus(`sending ${action.toUpperCase()} to server…`);
@@ -188,10 +187,7 @@ function SupervisorFacePunchInner() {
         body: JSON.stringify({
           descriptor,
           action, // "in" or "out"
-          location: {
-            lat: loc.latitude,
-            lng: loc.longitude,
-          },
+          location, // NEW: send lat/lng/accuracy (may be null)
         }),
       });
 
@@ -228,23 +224,13 @@ function SupervisorFacePunchInner() {
 
       const ts =
         rec.punchIn || rec.punchOut || rec.createdAt
-          ? new Date(rec.punchOut || rec.punchIn || rec.createdAt).toLocaleString(
-              "en-IN",
-              { timeZone: "Asia/Kolkata" }
-            )
-          : new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-
-      const locText =
-        rec.location && rec.location.lat != null && rec.location.lng != null
-          ? ` @ ${rec.location.lat.toFixed(4)}, ${rec.location.lng.toFixed(4)}`
-          : geo
-          ? ` @ ${geo.latitude.toFixed(4)}, ${geo.longitude.toFixed(4)}`
-          : "";
+          ? new Date(rec.punchOut || rec.punchIn || rec.createdAt).toLocaleString()
+          : new Date().toLocaleString();
 
       const line =
         action === "in"
-          ? `Punch IN done at ${ts}${locText}`
-          : `Punch OUT done at ${ts}${locText}`;
+          ? `Punch IN done at ${ts}`
+          : `Punch OUT done at ${ts}`;
 
       setLastActionInfo(line);
       setStatus(
@@ -259,6 +245,7 @@ function SupervisorFacePunchInner() {
   }
 
   function handleReload() {
+    // simple reload of page & state
     router.refresh();
   }
 
@@ -381,36 +368,6 @@ function SupervisorFacePunchInner() {
         </button>
       </div>
 
-      {/* Location UI */}
-      <div
-        style={{
-          marginTop: 6,
-          marginBottom: 8,
-          padding: 8,
-          borderRadius: 8,
-          border: "1px solid #e2e8f0",
-          background: "#f8fafc",
-          fontSize: 12,
-        }}
-      >
-        <div style={{ marginBottom: 4, fontWeight: 500 }}>Location</div>
-        <button
-          onClick={handleGetLocation}
-          style={{
-            padding: "4px 10px",
-            borderRadius: 6,
-            border: "1px solid #cbd5e1",
-            background: "#ffffff",
-            fontSize: 12,
-            cursor: "pointer",
-            marginBottom: 4,
-          }}
-        >
-          Get current location
-        </button>
-        <div style={{ color: "#475569" }}>{geoMessage}</div>
-      </div>
-
       {matchedEmp && (
         <div
           style={{
@@ -439,12 +396,26 @@ function SupervisorFacePunchInner() {
               {lastActionInfo}
             </div>
           )}
+          {lastLocation && (
+            <div style={{ marginTop: 4, color: "#155e75", fontSize: 12 }}>
+              Location: {lastLocation.lat.toFixed(5)},{" "}
+              {lastLocation.lng.toFixed(5)} (±
+              {Math.round(lastLocation.accuracy || 0)}m)
+            </div>
+          )}
         </div>
       )}
 
+      {/* STATUS LINES */}
       <div style={{ marginTop: 4, fontSize: 12, color: "#555" }}>
         <strong>Status:</strong> {status}
       </div>
+
+      {locationStatus && (
+        <div style={{ marginTop: 4, fontSize: 12, color: "#0f766e" }}>
+          <strong>Location:</strong> {locationStatus}
+        </div>
+      )}
 
       <div style={{ marginTop: 8, fontSize: 12 }}>
         <div style={{ marginBottom: 4 }}>Threshold</div>
