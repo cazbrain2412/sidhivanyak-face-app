@@ -24,6 +24,10 @@ function SupervisorFacePunchInner() {
 
   const [lastActionInfo, setLastActionInfo] = useState("");
 
+  // NEW: location state
+  const [location, setLocation] = useState(null);
+  const [locStatus, setLocStatus] = useState("Location not captured yet");
+
   // ---------- CAMERA + MODELS ----------
 
   useEffect(() => {
@@ -75,6 +79,39 @@ function SupervisorFacePunchInner() {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
     };
+  }, []);
+
+  // ---------- NEW: GEOLOCATION (current location) ----------
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      setLocStatus("Location not supported on this device");
+      return;
+    }
+
+    setLocStatus("Requesting location permission…");
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        setLocation({
+          latitude,
+          longitude,
+          accuracy,
+          timestamp: Date.now(),
+        });
+        setLocStatus("Location captured");
+      },
+      (err) => {
+        console.error("geo error", err);
+        setLocStatus("Location error: " + (err.message || "Permission denied"));
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000,
+      }
+    );
   }, []);
 
   // ---------- FACE CAPTURE & ATTENDANCE ----------
@@ -132,6 +169,8 @@ function SupervisorFacePunchInner() {
         body: JSON.stringify({
           descriptor,
           action, // "in" or "out"
+          // NEW: send location (may be null if permission denied)
+          location,
         }),
       });
 
@@ -347,6 +386,21 @@ function SupervisorFacePunchInner() {
         <strong>Status:</strong> {status}
       </div>
 
+      {/* NEW: show location + status */}
+      <div style={{ marginTop: 6, fontSize: 12, color: "#555" }}>
+        <strong>Location:</strong>{" "}
+        {location
+          ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}${
+              location.accuracy
+                ? ` (±${Math.round(location.accuracy)} m)`
+                : ""
+            }`
+          : "Not available"}
+      </div>
+      <div style={{ marginTop: 2, fontSize: 11, color: "#777" }}>
+        {locStatus}
+      </div>
+
       <div style={{ marginTop: 8, fontSize: 12 }}>
         <div style={{ marginBottom: 4 }}>Threshold</div>
         <input
@@ -378,3 +432,4 @@ export default function SupervisorFacePunchPage() {
     </Suspense>
   );
 }
+

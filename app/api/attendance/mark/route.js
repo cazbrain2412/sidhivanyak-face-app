@@ -35,11 +35,35 @@ function buildDateKey(d = new Date()) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+// NEW: normalize location payload from client
+function normalizeLocation(loc) {
+  if (!loc || typeof loc !== "object") return null;
+  const latitude = Number(loc.latitude);
+  const longitude = Number(loc.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+  const out = { latitude, longitude };
+
+  if (loc.accuracy != null && Number.isFinite(Number(loc.accuracy))) {
+    out.accuracy = Number(loc.accuracy);
+  }
+  if (loc.label && typeof loc.label === "string") {
+    out.label = loc.label;
+  }
+  if (loc.timestamp) {
+    out.timestamp = loc.timestamp;
+  }
+
+  return out;
+}
+
 export async function POST(req) {
   await dbConnect();
   try {
     const body = await req.json();
-    const { descriptor, action } = body;
+    const { descriptor, action, location } = body;
+
+    const locationData = normalizeLocation(location);
 
     if (!Array.isArray(descriptor) || descriptor.length < 10) {
       return NextResponse.json(
@@ -114,10 +138,16 @@ export async function POST(req) {
           punchIn: now,
           status: "HALF", // until we get OUT with >=2 hours
         };
+
         if (best.zone) toCreate.zone = best.zone;
         if (best.division) toCreate.division = best.division;
         if (best.department) toCreate.department = best.department;
         if (best.supervisorCode) toCreate.supervisorCode = best.supervisorCode;
+
+        // NEW: store location of punch IN
+        if (locationData) {
+          toCreate.locationIn = locationData;
+        }
 
         const created = await Attendance.create(toCreate);
         return NextResponse.json(
@@ -151,14 +181,19 @@ export async function POST(req) {
         }
 
         // set punchIn on existing doc
+        const updateSet = {
+          punchIn: now,
+          status: "HALF", // until OUT decides full/half
+        };
+
+        // NEW: update locationIn if provided
+        if (locationData) {
+          updateSet.locationIn = locationData;
+        }
+
         const updated = await Attendance.findByIdAndUpdate(
           existing._id,
-          {
-            $set: {
-              punchIn: now,
-              status: "HALF", // until OUT decides full/half
-            },
-          },
+          { $set: updateSet },
           { new: true }
         ).lean();
 
@@ -194,6 +229,11 @@ export async function POST(req) {
       if (best.division) toCreate.division = best.division;
       if (best.department) toCreate.department = best.department;
       if (best.supervisorCode) toCreate.supervisorCode = best.supervisorCode;
+
+      // NEW: store location of punch OUT
+      if (locationData) {
+        toCreate.locationOut = locationData;
+      }
 
       const created = await Attendance.create(toCreate);
       return NextResponse.json(
@@ -247,13 +287,20 @@ export async function POST(req) {
       statusValue = "HALF";
     }
 
+    const updateSet = {
+      punchOut: now,
+      status: statusValue,
+    };
+
+    // NEW: store location of punch OUT
+    if (locationData) {
+      updateSet.locationOut = locationData;
+    }
+
     const updatedOut = await Attendance.findByIdAndUpdate(
       existing._id,
       {
-        $set: {
-          punchOut: now,
-          status: statusValue,
-        },
+        $set: updateSet,
       },
       { new: true }
     ).lean();
