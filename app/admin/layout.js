@@ -20,7 +20,7 @@ export default function AdminLayout({ children }) {
               <div className="flex items-center gap-3 px-4 py-5">
                 <div className="flex-1">
                   <div className={`text-lg font-semibold ${collapsed ? "hidden" : ""}`}>
-                    CAZ BRAIN — Admin
+                    Siddhiynayak Enterprises — Admin
                   </div>
                 </div>
                 <button
@@ -51,7 +51,7 @@ export default function AdminLayout({ children }) {
                 <div className={`${collapsed ? "text-center" : ""}`}>
                   <div className={collapsed ? "hidden" : "mb-1"}>Logged in as</div>
                   <div className="font-medium">Super Admin</div>
-                  <div className="text-xs opacity-80">cazbrain@company.com</div>
+                  <div className="text-xs opacity-80">sidhivnayak@company.com</div>
                 </div>
               </div>
             </div>

@@ -42,7 +42,8 @@ export default function SupervisorLoginPage() {
           {/* Logo — put your company logo at /public/logo.png or change the src */}
           <img src="/logo.png" alt="logo" className="w-14 h-14 rounded-full object-cover" />
           <div>
-            <h2 className="text-lg font-semibold">CAZ BRAIN</h2>
+            <p className="text-xs text-gray-500">Supervisor sign in</p>
+<h2 className="text-lg font-semibold">Sidhivinayak Enterprises</h2>
             <p className="text-xs text-gray-500">Supervisor sign in</p>
           </div>
         </div>
