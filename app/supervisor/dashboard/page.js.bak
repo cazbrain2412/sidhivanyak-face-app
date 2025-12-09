@@ -1,0 +1,295 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+export default function SupervisorDashboard() {
+  const router = useRouter();
+
+  const [supName, setSupName] = useState("");
+  const [supCode, setSupCode] = useState("");
+  const [employees, setEmployees] = useState([]);
+  const [recent, setRecent] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  // Load supervisor info + data
+  useEffect(() => {
+    const token = localStorage.getItem("supervisorToken");
+    const name = localStorage.getItem("supervisorName") || "";
+    const code = localStorage.getItem("supervisorCode") || "";
+
+    if (!token || !code) {
+      router.replace("/supervisor/login");
+      return;
+    }
+
+    setSupName(name);
+    setSupCode(code);
+    loadData(token);
+  }, [router]);
+
+  async function loadData(token) {
+    try {
+      setLoading(true);
+
+      // Assigned employees (ONLY for this supervisor)
+      const empRes = await fetch("/api/employees/by-supervisor", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      });
+      const empJson = await empRes.json();
+      setEmployees(empJson.employees || []);
+
+      // Recent punches (we will filter to only assigned employees)
+      const attRes = await fetch("/api/attendance/list?recent=50", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      });
+      const attJson = await attRes.json();
+      setRecent(attJson.attendance || []);
+    } catch (err) {
+      console.error("loadData error", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem("supervisorToken");
+    localStorage.removeItem("supervisorName");
+    localStorage.removeItem("supervisorCode");
+    router.replace("/supervisor/login");
+  }
+
+  // Filter assigned employees by search
+  const filteredEmployees = employees.filter((e) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      (e.name || "").toLowerCase().includes(q) ||
+      (e.code || "").toLowerCase().includes(q) ||
+      (e.mobile || "").toLowerCase().includes(q)
+    );
+  });
+
+  // Map of last punch (for assigned employees only)
+  const lastPunchMap = {};
+  for (const a of recent) {
+    if (!a.employeeCode) continue;
+    if (!lastPunchMap[a.employeeCode]) {
+      lastPunchMap[a.employeeCode] = a;
+    }
+  }
+
+  function openSelfPunch() {
+    router.push("/supervisor/face-punch?self=1");
+  }
+
+  function openSelfAttendance() {
+    if (!supCode) return;
+    router.push(`/supervisor/attendance?emp=${encodeURIComponent(supCode)}&self=1`);
+  }
+
+  function openEmpPunch(code) {
+    router.push("/supervisor/face-punch?emp=" + encodeURIComponent(code));
+  }
+
+  function openEmpEnroll(code) {
+    router.push("/supervisor/face-enroll?emp=" + encodeURIComponent(code));
+  }
+
+  function openEmpAttendance(code) {
+    router.push("/supervisor/attendance?emp=" + encodeURIComponent(code));
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      {/* Top Bar */}
+      <header className="w-full bg-white border-b shadow-sm px-4 py-3 flex items-center justify-between">
+        <div>
+          <div className="text-sm text-slate-500">Supervisor App</div>
+          <div className="font-semibold text-slate-800">
+            {supName || "Supervisor"}
+            {supCode ? ` (${supCode})` : ""}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={openSelfAttendance}
+            className="text-sm px-3 py-1 rounded border border-slate-300 hover:bg-slate-100"
+          >
+            My Attendance
+          </button>
+          <button
+            onClick={logout}
+            className="text-sm text-red-600 hover:underline"
+          >
+            Logout
+          </button>
+        </div>
+      </header>
+
+      {/* Content */}
+      <main className="flex-1 px-4 py-4 max-w-4xl mx-auto w-full pb-20">
+        {/* My Attendance quick card */}
+        <section className="bg-white rounded-xl shadow-sm p-4 mb-4 flex items-center justify-between">
+          <div>
+            <div className="font-semibold text-slate-800">My Attendance</div>
+            <div className="text-xs text-slate-500">
+              Mark your own Punch In / Punch Out using face.
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={openSelfPunch}
+              className="px-3 py-2 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
+            >
+              Open Camera
+            </button>
+            <button
+              onClick={openSelfAttendance}
+              className="px-3 py-2 rounded-lg text-sm border border-slate-300 hover:bg-slate-100"
+            >
+              View Calendar
+            </button>
+          </div>
+        </section>
+
+        {/* Assigned Employees */}
+        <section className="bg-white rounded-xl shadow-sm p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-slate-800 text-base">
+              Assigned Employees
+            </h2>
+          </div>
+
+          <input
+            placeholder="Search employees by name, code or mobile"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+
+          {loading ? (
+            <div className="text-sm text-slate-500">Loading...</div>
+          ) : filteredEmployees.length === 0 ? (
+            <div className="text-sm text-slate-500">
+              No employees assigned to you.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredEmployees.map((emp) => {
+                const last = lastPunchMap[emp.code];
+                let lastLine = "No punches yet";
+                if (last && last.timestamp) {
+                  const ts = new Date(last.timestamp).toLocaleString();
+                  const flags = [];
+                  if (last.punchIn) flags.push("IN");
+                  if (last.punchOut) flags.push("OUT");
+                  lastLine = `${ts} • ${flags.join(" / ") || "Punch"}`;
+                }
+
+                return (
+                  <div
+                    key={emp.code}
+                    className="border border-slate-200 rounded-xl px-3 py-2 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="font-medium text-slate-900 text-sm">
+                        {emp.name || emp.code}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {emp.code} • {emp.mobile || "-"}
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-1">
+                        {lastLine}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={() => openEmpPunch(emp.code)}
+                        className="px-3 py-1 rounded-lg text-xs bg-emerald-600 text-white hover:bg-emerald-700"
+                      >
+                        Punch
+                      </button>
+                      <button
+                        onClick={() => openEmpEnroll(emp.code)}
+                        className="px-3 py-1 rounded-lg text-xs bg-amber-500 text-white hover:bg-amber-600"
+                      >
+                        Enroll Face
+                      </button>
+                      <button
+                        onClick={() => openEmpAttendance(emp.code)}
+                        className="px-3 py-1 rounded-lg text-xs border border-slate-300 hover:bg-slate-100"
+                      >
+                        Calendar
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Recent Punches (for assigned employees only) */}
+        <section className="bg-white rounded-xl shadow-sm p-4">
+          <h2 className="font-semibold text-slate-800 text-base mb-2">
+            Recent Punches
+          </h2>
+          {recent.length === 0 ? (
+            <div className="text-sm text-slate-500">No recent punches.</div>
+          ) : (
+            <ul className="divide-y divide-slate-100 text-sm">
+              {recent
+                .filter((a) =>
+                  employees.some((e) => e.code === a.employeeCode)
+                )
+                .slice(0, 15)
+                .map((a) => (
+                  <li key={a.id || a._id} className="py-2">
+                    <div className="font-medium text-slate-900">
+                      {a.employeeName || a.employeeCode}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {new Date(a.timestamp || a.createdAt).toLocaleString()} •{" "}
+                      {a.punchIn ? "IN" : ""} {a.punchOut ? "OUT" : ""}
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </section>
+      </main>
+
+      {/* Bottom nav */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around py-2 text-xs">
+        <button
+          onClick={() => router.push("/supervisor/dashboard")}
+          className="flex flex-col items-center text-indigo-600 font-semibold"
+        >
+          Home
+        </button>
+        <button
+          onClick={() => router.push("/supervisor/attendance")}
+          className="flex flex-col items-center text-slate-600"
+        >
+          Attendance
+        </button>
+        <button
+          onClick={() => router.push("/supervisor/profile")}
+          className="flex flex-col items-center text-slate-600"
+        >
+          Profile
+        </button>
+      </nav>
+    </div>
+  );
+}
+

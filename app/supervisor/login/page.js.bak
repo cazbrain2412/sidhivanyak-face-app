@@ -1,0 +1,64 @@
+"use client";
+import { useState } from "react";
+
+export default function SupervisorLoginPage() {
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e) {
+    e && e.preventDefault();
+    if (!code.trim() || !password) return alert("Code and password required");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/supervisors/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code.trim(), password })
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) {
+        alert(j.error || "Login failed");
+        setLoading(false);
+        return;
+      }
+      // store token + simple profile data in localStorage for client pages
+      localStorage.setItem("supervisorToken", j.token);
+      localStorage.setItem("supervisorCode", j.supervisor?.code || code.trim());
+      localStorage.setItem("supervisorName", j.supervisor?.name || "");
+      // go to dashboard
+      window.location.href = "/supervisor/dashboard";
+    } catch (err) {
+      console.error(err);
+      alert("Network error");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{maxWidth:640, margin:"48px auto", padding:20}}>
+      <h1>Supervisor Login</h1>
+      <form onSubmit={submit} style={{display:"grid", gap:12}}>
+        <label>
+          Supervisor Code
+          <input value={code} onChange={e=>setCode(e.target.value)} className="input" style={{width:"100%",padding:8}} />
+        </label>
+
+        <label>
+          Password
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="input" style={{width:"100%",padding:8}} />
+        </label>
+
+        <div style={{display:"flex", gap:8}}>
+          <button type="submit" style={{padding:"10px 16px"}} disabled={loading}>{loading ? "Signing in..." : "Sign in"}</button>
+          <button type="button" onClick={()=>{ setCode(""); setPassword(""); }} style={{padding:"10px 12px"}}>Clear</button>
+        </div>
+      </form>
+
+      <p style={{marginTop:18,color:"#666"}}>
+        After login you will see Supervisor Dashboard, My Attendance, Assigned employees and quick face enroll.
+      </p>
+    </div>
+  );
+}
+

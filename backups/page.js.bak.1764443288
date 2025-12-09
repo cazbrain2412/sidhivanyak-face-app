@@ -1,0 +1,436 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+/*
+  FacePunchPage — strict server-verified logic + polished mobile UI
+  - Avatar initial
+  - Larger spacing / fonts for mobile
+  - Soft shadows, nicer tokens
+  - Canvas overlay for detection box
+  - Modal confirm, toast
+  - Immediately updates IN/OUT flags from server response
+*/
+
+function todayISO() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+function prettyTime(ts) {
+  try { return new Date(ts).toLocaleTimeString(); } catch { return ts; }
+}
+function getToken() { return typeof window !== "undefined" ? localStorage.getItem("supervisor_token") : null; }
+
+export default function FacePunchPage() {
+  const params = (typeof window !== "undefined") ? new URLSearchParams(window.location.search) : new URLSearchParams("");
+  const empCodeParam = params.get("emp") || "";
+  const selfModeParam = params.get("self") || "";
+  const empCode = empCodeParam;
+  const selfMode = !!selfModeParam;
+
+  const videoRef = useRef(null);
+  const overlayRef = useRef(null); // canvas overlay
+  const [status, setStatus] = useState("initializing camera...");
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [employee, setEmployee] = useState({ code: empCode, name: empCode, mobile: "" });
+  const [threshold, setThreshold] = useState(0.65);
+
+  // today's flags (server verified)
+  const [hasInToday, setHasInToday] = useState(false);
+  const [hasOutToday, setHasOutToday] = useState(false);
+
+  const [processing, setProcessing] = useState(false);
+  const [detected, setDetected] = useState(null); // { matched, emp, dist, box }
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmPayload, setConfirmPayload] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  // Start camera and set up overlay size
+  useEffect(() => {
+    let mounted = true;
+    async function start() {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        if (!mounted) { s.getTracks().forEach(t => t.stop()); return; }
+        if (videoRef.current) {
+          videoRef.current.srcObject = s;
+          try { await videoRef.current.play(); } catch (e) { /* autoplay */ }
+        }
+        setStatus("camera ready");
+        // ensure overlay matches size when ready
+        setTimeout(resizeOverlay, 300);
+        window.addEventListener("resize", resizeOverlay);
+      } catch (err) {
+        console.error("Camera error:", err);
+        setStatus("camera error: " + (err.message || String(err)));
+      }
+    }
+    start();
+    return () => {
+      mounted = false;
+      if (videoRef.current && videoRef.current.srcObject) {
+        const tracks = (videoRef.current.srcObject).getTracks?.() || [];
+        tracks.forEach(t => { try { t.stop(); } catch {} });
+        try { videoRef.current.srcObject = null; } catch {}
+      }
+      window.removeEventListener("resize", resizeOverlay);
+    };
+  }, []);
+
+  // Ensure overlay canvas matches video pixel size
+  function resizeOverlay() {
+    try {
+      const v = videoRef.current;
+      const c = overlayRef.current;
+      if (!v || !c) return;
+      c.width = v.clientWidth;
+      c.height = v.clientHeight;
+      c.style.width = `${v.clientWidth}px`;
+      c.style.height = `${v.clientHeight}px`;
+    } catch (e) { /* ignore */ }
+  }
+
+  // load employee profile
+  useEffect(() => {
+    if (empCode) loadEmployee();
+    else setStatus("No employee specified");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empCode]);
+
+  async function loadEmployee() {
+    try {
+      setStatus("loading employee...");
+      const res = await fetch(`/api/employees/list?code=${encodeURIComponent(empCode)}`);
+      const j = await res.json();
+      const e = (j.employees && j.employees[0]) || null;
+      if (e) setEmployee({ code: e.code, name: e.name || e.code, mobile: e.mobile || "" });
+      setStatus("");
+    } catch (err) {
+      console.error("loadEmployee error", err);
+      setStatus("failed to load employee");
+    } finally {
+      await refreshTodayFlags();
+    }
+  }
+
+  // Re-check todays flags from server and update UI immediately.
+  async function refreshTodayFlags() {
+    if (!empCode) return { inFound: false, outFound: false };
+    try {
+      setStatus("checking today's attendance...");
+      const today = todayISO();
+      const res = await fetch(`/api/attendance/list?date=${encodeURIComponent(today)}&employeeCode=${encodeURIComponent(empCode)}`, {
+        headers: { Authorization: getToken() ? `Bearer ${getToken()}` : "" }
+      });
+      const j = await res.json();
+      const recs = j.attendance || [];
+      let inFound = false, outFound = false;
+      for (const r of recs) {
+        const action = (r.action || r.type || "").toString().toLowerCase();
+        if (action.includes("in")) inFound = true;
+        if (action.includes("out")) outFound = true;
+        if (r.punchIn) inFound = true;
+        if (r.punchOut) outFound = true;
+        if (r.in) inFound = !!r.in;
+        if (r.out) outFound = !!r.out;
+      }
+      setHasInToday(inFound);
+      setHasOutToday(outFound);
+      setStatus("");
+      return { inFound, outFound, recs };
+    } catch (err) {
+      console.error("refreshTodayFlags error", err);
+      setStatus("failed to check today's attendance");
+      setHasInToday(false);
+      setHasOutToday(false);
+      return { inFound: false, outFound: false, recs: [] };
+    }
+  }
+
+  // models load once
+  async function ensureModels() {
+    if (modelsLoaded) return;
+    setStatus("loading face-api models...");
+    try {
+      const faceapi = await import("face-api.js");
+      try { if (faceapi?.tf?.setBackend) await faceapi.tf.setBackend("webgl"); } catch (e) { console.warn(e); }
+      const base = "/models";
+      await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+      await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+      await faceapi.nets.faceRecognitionNet.loadFromUri(base);
+      setModelsLoaded(true);
+      setStatus("models loaded");
+    } catch (err) {
+      console.error("models load error", err);
+      setStatus("failed to load models");
+      throw err;
+    }
+  }
+
+  // draw detection box on overlay canvas
+  function drawBox(box) {
+    try {
+      const c = overlayRef.current;
+      if (!c || !box) { // clear
+        if (c) { const ctx = c.getContext("2d"); ctx.clearRect(0, 0, c.width, c.height); }
+        return;
+      }
+      const ctx = c.getContext("2d");
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.strokeStyle = "rgba(34,197,94,0.95)"; // green
+      ctx.lineWidth = Math.max(2, Math.round(c.width / 200));
+      ctx.strokeRect(box.x, box.y, box.width, box.height);
+      // small circle at center
+      ctx.fillStyle = "rgba(34,197,94,0.9)";
+      ctx.beginPath();
+      ctx.arc(box.x + box.width/2, box.y + box.height/2, 3, 0, Math.PI*2);
+      ctx.fill();
+    } catch (e) { console.warn("drawBox err", e); }
+  }
+
+  function safeNumber(n) { const v = Number(n); return Number.isFinite(v) ? v : 0; }
+  function distance(a,b){ let s=0; const len = Math.min(a?.length||0, b?.length||0); for(let i=0;i<len;i++){ const d = safeNumber(a[i]) - safeNumber(b[i]); s += d*d; } return Math.sqrt(s); }
+
+  // capture and run detection; draw box and prepare confirm payload based on server flags
+  async function captureAndMatch() {
+    if (processing) return;
+    setProcessing(true);
+    try {
+      await ensureModels();
+      setStatus("detecting face...");
+      const faceapi = await import("face-api.js");
+      if (!videoRef.current) { setStatus("video not ready"); setProcessing(false); return; }
+      const options = new faceapi.TinyFaceDetectorOptions();
+      const det = await faceapi.detectSingleFace(videoRef.current, options).withFaceLandmarks().withFaceDescriptor();
+      if (!det || !det.descriptor) {
+        setDetected(null);
+        drawBox(null);
+        setStatus("no face detected — try again");
+        setProcessing(false);
+        return;
+      }
+      // compute box coordinates relative to video element size (face-api returns relative coords based on canvas size used)
+      const box = det.detection.box || { x: 0, y: 0, width: 0, height: 0 };
+      // face-api returns coordinates relative to the input element when you pass media element; overlay already matches video size
+      drawBox(box);
+
+      // local matching (optional) — uses descriptors loaded into window.__knownDescriptors
+      const descriptor = Array.from(det.descriptor);
+      const known = Array.isArray(window.__knownDescriptors) ? window.__knownDescriptors : [];
+      let best = { dist: Infinity, emp: null };
+      for (const e of known) {
+        if (!e?.faceDescriptor || e.faceDescriptor.length === 0) continue;
+        const dist = distance(descriptor, e.faceDescriptor);
+        if (dist < best.dist) { best.dist = dist; best.emp = e; }
+      }
+
+      if (!best.emp || best.dist === Infinity || best.dist > threshold) {
+        setDetected({ matched: false, dist: best.dist });
+        setStatus("Unknown face — distance: " + (best.dist === Infinity ? "∞" : best.dist.toFixed(3)));
+        setProcessing(false);
+        return;
+      }
+
+      // found match locally
+      setDetected({ matched: true, emp: best.emp, dist: best.dist, box });
+      setStatus("Matched: " + (best.emp.name || best.emp.code));
+
+      // **Important** refresh server flags right before allowing mark
+      const flags = await refreshTodayFlags();
+      if (flags.outFound && flags.inFound) {
+        setStatus("Already In & Out today — cannot mark");
+        setProcessing(false);
+        return;
+      }
+      // determine allowed action
+      const action = (!flags.inFound) ? "in" : "out";
+      setConfirmPayload({ emp: best.emp, action, box });
+      setConfirmOpen(true);
+      setProcessing(false);
+    } catch (err) {
+      console.error("captureAndMatch error", err);
+      setStatus("error: " + (err?.message || String(err)));
+      setProcessing(false);
+    }
+  }
+
+  // Manual action buttons use server-checked rules
+  async function handleManualAction(action) {
+    if (processing) return;
+    const flags = await refreshTodayFlags();
+    if (action === "in" && flags.inFound) { setStatus("Punch In already recorded today — please Punch Out"); return; }
+    if (action === "out" && !flags.inFound) { setStatus("Cannot Punch Out before Punch In"); return; }
+    if (action === "out" && flags.outFound) { setStatus("Punch Out already recorded today"); return; }
+    setConfirmPayload({ emp: { code: employee.code, name: employee.name }, action });
+    setConfirmOpen(true);
+  }
+
+  // Send attendance to server and update flags immediately from server response if present
+  async function sendAttendance(emp, action) {
+    setConfirmOpen(false);
+    setProcessing(true);
+    try {
+      setStatus("sending attendance...");
+      const token = getToken();
+      const resp = await fetch("/api/attendance/mark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ employeeCode: emp.code, employeeName: emp.name || emp.code, action })
+      });
+      let jr = {};
+      try { jr = await resp.json(); } catch (e) { /* ignore */ }
+      if (!resp.ok) {
+        setStatus("server error: " + (jr?.error || resp.statusText || resp.status));
+        setToast({ message: "Failed to record attendance", type: "error" });
+        setProcessing(false);
+        return;
+      }
+
+      // If server gives explicit flags or record, use them; otherwise re-query
+      if (jr && jr.inToday !== undefined && jr.outToday !== undefined) {
+        setHasInToday(!!jr.inToday);
+        setHasOutToday(!!jr.outToday);
+      } else if (jr && jr.record) {
+        // if server returns record with fields, try to derive
+        const rec = jr.record;
+        if (rec.punchIn || (rec.action && rec.action.toLowerCase().includes("in"))) setHasInToday(true);
+        if (rec.punchOut || (rec.action && rec.action.toLowerCase().includes("out"))) setHasOutToday(true);
+      } else {
+        // fallback: refresh flags from server
+        await refreshTodayFlags();
+      }
+
+      setToast({ message: `Marked ${action.toUpperCase()} for ${emp.name || emp.code}`, type: "success" });
+      setStatus(`Marked ${action.toUpperCase()} — ${prettyTime(jr.record?.timestamp || new Date().toISOString())}`);
+      setProcessing(false);
+    } catch (err) {
+      console.error("sendAttendance error", err);
+      setStatus("network error");
+      setToast({ message: "Network error", type: "error" });
+      setProcessing(false);
+    } finally {
+      // clear detection box after marking
+      drawBox(null);
+    }
+  }
+
+  function onBack() {
+    setDetected(null);
+    setConfirmOpen(false);
+    setConfirmPayload(null);
+    drawBox(null);
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // UI helpers
+  const canPunchIn = !hasInToday;
+  const canPunchOut = hasInToday && !hasOutToday;
+
+  // avatar initial
+  const initial = (employee.name || employee.code || "U").toString().trim()[0]?.toUpperCase() || "U";
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-start justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-md p-4" style={{ boxShadow: "0 6px 20px rgba(2,6,23,0.06)" }}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold leading-tight">Face Punch</h2>
+            <div className="text-sm text-slate-500 mt-1">Employee: <span className="font-semibold">{employee.name || employee.code}</span> — <span className="text-xs">{employee.code}</span></div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+              {initial}
+            </div>
+            <button onClick={()=>window.history.back()} className="px-3 py-1 border rounded text-sm">Back</button>
+          </div>
+        </div>
+
+        <div className="relative border rounded-lg overflow-hidden" style={{ height: 360 }}>
+          <video ref={videoRef} autoPlay muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", background: "#000" }} />
+          <canvas ref={overlayRef} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }} />
+        </div>
+
+        <div className="mt-4">
+          <div className="flex gap-3">
+            <button
+              onClick={() => handleManualAction("in")}
+              disabled={!canPunchIn || processing}
+              className={`flex-1 py-3 rounded-lg text-white ${canPunchIn ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-200 text-gray-500'}`}
+            >
+              Punch In
+            </button>
+
+            <button
+              onClick={() => handleManualAction("out")}
+              disabled={!canPunchOut || processing}
+              className={`flex-1 py-3 rounded-lg text-white ${canPunchOut ? 'bg-rose-500 hover:bg-rose-600' : 'bg-gray-200 text-gray-500'}`}
+            >
+              Punch Out
+            </button>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <button onClick={captureAndMatch} disabled={processing} className="flex-1 py-2 border rounded-lg">Open Camera Match</button>
+            <button onClick={refreshTodayFlags} className="px-3 py-2 border rounded-lg">Reload</button>
+          </div>
+
+          <div className="mt-3 text-sm text-slate-600">
+            <div>Status: <span className="font-medium">{status || (processing ? "processing..." : "")}</span></div>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="text-xs">Threshold</div>
+              <input type="range" min="0.45" max="1.0" step="0.01" value={threshold} onChange={e => setThreshold(Number(e.target.value))} className="flex-1" />
+              <div className="text-xs w-10 text-right">{threshold.toFixed(2)}</div>
+            </div>
+          </div>
+
+          {detected && (
+            <div className="mt-4 p-3 rounded-lg border bg-slate-50 shadow-sm">
+              {detected.matched ? (
+                <>
+                  <div className="text-lg font-semibold">{detected.emp.name || detected.emp.code}</div>
+                  <div className="text-xs text-slate-500 mt-1">{detected.emp.code} • {detected.emp.mobile || "-"}</div>
+                  <div className="text-xs mt-2">Distance: {Number(detected.dist || 0).toFixed(3)}</div>
+                  <div className="mt-3 flex gap-2">
+                    <button onClick={() => handleManualAction("in")} disabled={!canPunchIn || processing} className="px-3 py-2 rounded bg-emerald-600 text-white">Mark In</button>
+                    <button onClick={() => handleManualAction("out")} disabled={!canPunchOut || processing} className="px-3 py-2 rounded bg-amber-500 text-white">Mark Out</button>
+                    <button onClick={onBack} className="px-3 py-2 rounded border">Back</button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm">Unknown face — try again or enroll.</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Inline confirm modal — themed */}
+        {confirmOpen && confirmPayload && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40" onClick={()=>setConfirmOpen(false)} />
+            <div className="relative bg-white rounded-lg shadow-lg p-5 w-full max-w-sm z-60">
+              <div className="font-semibold text-lg">Confirm attendance</div>
+              <div className="mt-3 text-sm">Mark <b>{confirmPayload.action.toUpperCase()}</b> for <b>{confirmPayload.emp.name || confirmPayload.emp.code}</b>?</div>
+              <div className="mt-5 flex justify-end gap-3">
+                <button onClick={()=>setConfirmOpen(false)} className="px-3 py-2 border rounded">Cancel</button>
+                <button onClick={()=>sendAttendance(confirmPayload.emp, confirmPayload.action)} className="px-4 py-2 rounded bg-blue-600 text-white">Yes, Mark</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Toast */}
+        {toast && (
+          <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 z-60 px-4 py-2 rounded ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-rose-600 text-white'}`}>
+            {toast.message}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
