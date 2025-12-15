@@ -74,7 +74,12 @@ export default function SupervisorFaceEnrollPageSrc() {
         return;
       }
       const arr = Array.from(det.descriptor);
-      setSamples(prev => { const next = [...prev, arr]; setStatus(\`Captured \${next.length} / 3\`); return next; });
+      setSamples(prev => {
+  const next = [...prev, arr];
+  setStatus("Captured " + next.length + " / 3");
+  return next;
+});
+
     } catch (err) {
       console.error(err);
       setStatus("capture error: " + (err?.message || String(err)));
