@@ -11,33 +11,37 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+  e.preventDefault();
+  setLoading(true);
+  setError("");
 
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        credentials: "include", // IMPORTANT: allows cookie to be saved
-      });
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+      credentials: "include",
+    });
 
-      const data = await res.json();
+    const data = await res.json();
 
-      if (!res.ok) {
-        setError(data.message || "Login failed");
-        setLoading(false);
-        return;
-      }
-
-      router.push(data.redirectPath);
-    } catch (err) {
-      setError("Something went wrong");
-    } finally {
+    if (!res.ok) {
+      setError(data.message || "Invalid credentials");
       setLoading(false);
+      return;
     }
-  };
+
+    // ✅ FORCE REDIRECT (DO NOT DEPEND ON API RESPONSE)
+    router.replace("/admin/dashboard");
+
+  } catch (err) {
+    setError("Something went wrong");
+  } finally {
+    setLoading(false);
+  }
+};
+
+        
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
