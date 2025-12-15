@@ -4,6 +4,8 @@ import ZoneAdmin from "@/models/ZoneAdmin";
 import Supervisor from "@/models/Supervisor";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import Zone from "@/models/Zone";
+;
 
 export async function POST(req) {
   await dbConnect();

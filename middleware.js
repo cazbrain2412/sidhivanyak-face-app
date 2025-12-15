@@ -1,29 +1,37 @@
 import { NextResponse } from "next/server";
+import jwt from "jsonwebtoken";
 
 export function middleware(req) {
   const token = req.cookies.get("token")?.value;
+  const url = req.nextUrl.pathname;
 
-  const { pathname } = req.nextUrl;
-
-  // Allow public routes
-  if (
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/api") ||
-    pathname.startsWith("/_next")
-  ) {
+  if (!token) {
+    if (url.startsWith("/zone-admin")) {
+      return NextResponse.redirect(new URL("/zone-admin/login", req.url));
+    }
     return NextResponse.next();
   }
 
-  // Protect admin routes
-  if (pathname.startsWith("/admin")) {
-    if (!token) {
-      return NextResponse.redirect(new URL("/login", req.url));
-    }
-  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-  return NextResponse.next();
+    // 🚫 Zone admin cannot access super admin
+    if (decoded.role === "ZONE_ADMIN" && url.startsWith("/admin")) {
+      return NextResponse.redirect(new URL("/zone-admin/dashboard", req.url));
+    }
+
+    // 🚫 Super admin cannot access zone admin dashboard
+    if (decoded.role === "SUPER_ADMIN" && url.startsWith("/zone-admin")) {
+      return NextResponse.redirect(new URL("/admin/dashboard", req.url));
+    }
+
+    return NextResponse.next();
+  } catch (err) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/zone-admin/:path*"],
 };
+
