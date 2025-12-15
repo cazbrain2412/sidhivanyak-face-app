@@ -31,15 +31,15 @@ export default function LoginPage() {
       return;
     }
 
-    // ✅ FORCE REDIRECT (DO NOT DEPEND ON API RESPONSE)
-    router.replace("/admin/dashboard");
+    // 🔥 IMPORTANT: HARD REDIRECT (not router.push)
+    window.location.href = data.redirectPath || "/admin/dashboard";
 
   } catch (err) {
     setError("Something went wrong");
-  } finally {
     setLoading(false);
   }
 };
+
 
         
 
