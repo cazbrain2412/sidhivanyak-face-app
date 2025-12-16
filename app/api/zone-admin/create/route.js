@@ -1,56 +1,62 @@
 import dbConnect from "@/lib/mongodb";
 import ZoneAdmin from "@/models/ZoneAdmin";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 
-function getTokenFromCookie(req) {
-  const cookieHeader = req.headers.get("cookie");
-  if (!cookieHeader) return null;
-
- 
-  // DEMO MODE: bypass auth
-const decoded = {
-  role: "SUPER_ADMIN",
-  id: "demo-super-admin"
-};
-
+// ❗ NOTHING ELSE HERE (NO cookies, NO decoded, NO logic)
 
 export async function POST(req) {
   await dbConnect();
 
   try {
-    const token = getTokenFromCookie(req);
-    if (!token) {
-      return Response.json({ success: false, message: "Unauthorized" }, { status: 401 });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-   
+    // ===============================
+    // DEMO MODE: bypass auth
+    // ===============================
+    const decoded = {
+      role: "SUPER_ADMIN",
+      id: "demo-super-admin",
+    };
 
     const body = await req.json();
     const { name, email, password, mobile, assignedZones } = body;
 
+    if (!name || !email || !password || !mobile || !assignedZones?.length) {
+      return Response.json(
+        { success: false, message: "All fields are required" },
+        { status: 400 }
+      );
+    }
+
+    const exists = await ZoneAdmin.findOne({ email });
+    if (exists) {
+      return Response.json(
+        { success: false, message: "Zone Admin already exists" },
+        { status: 409 }
+      );
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await ZoneAdmin.create({
+    const zoneAdmin = await ZoneAdmin.create({
       name,
       email,
       password: hashedPassword,
       mobile,
       assignedZones,
-      createdBy: decoded.userId || decoded.id,
+      createdBy: decoded.id,
     });
 
-    return Response.json({ success: true });
+    return Response.json({
+      success: true,
+      message: "Zone Admin created successfully",
+      zoneAdminId: zoneAdmin._id,
+    });
   } catch (err) {
     console.error("ZONE ADMIN CREATE ERROR:", err);
-    return Response.json({ success: false, message: "Server error" }, { status: 500 });
+    return Response.json(
+      { success: false, message: "Server error" },
+      { status: 500 }
+    );
   }
 }
-
-   
-    
-        
       
 
