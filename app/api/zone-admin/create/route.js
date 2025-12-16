@@ -37,13 +37,14 @@ export async function POST(req) {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const zoneAdmin = await ZoneAdmin.create({
-      name,
-      email,
-      password: hashedPassword,
-      mobile,
-      assignedZones,
-      createdBy: decoded.id,
-    });
+  name,
+  email,
+  password: hashedPassword,
+  mobile,
+  assignedZones,
+  // DEMO MODE: skip createdBy
+});
+
 
     return Response.json({
       success: true,
