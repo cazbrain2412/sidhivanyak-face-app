@@ -34,31 +34,57 @@ export default function AdminLayout({ children }) {
                 </button>
               </div>
 
-              
+              <nav className="px-2 mb-6">
                 <nav className="px-2 mb-6">
-  <NavItem href="/admin/dashboard" label="Dashboard" collapsed={collapsed} />
-  <NavItem href="/admin/zones" label="Zones" collapsed={collapsed} />
-
-  {/* ✅ Create Zone Admin */}
   <NavItem
-    href="/admin/zone-admin/create"
-    label="Create Zone Admin"
+    href="/zone-admin/dashboard"
+    label="Dashboard"
     collapsed={collapsed}
   />
 
-  <NavItem href="/admin/divisions" label="Divisions" collapsed={collapsed} />
-  <NavItem href="/admin/departments" label="Departments" collapsed={collapsed} />
-  <NavItem href="/admin/supervisors" label="Supervisors" collapsed={collapsed} />
-  <NavItem href="/admin/employees" label="Employees" collapsed={collapsed} />
-  <NavItem href="/admin/attendance" label="Attendance" collapsed={collapsed} />
-  <NavItem href="/admin/reports" label="Reports" collapsed={collapsed} />
+  {/* ❌ Zones / Divisions / Departments REMOVED for Zone Admin */}
+
+  <NavItem
+    href="/zone-admin/supervisors"
+    label="Supervisors"
+    collapsed={collapsed}
+  />
+
+  <NavItem
+    href="/zone-admin/employees"
+    label="Employees"
+    collapsed={collapsed}
+  />
+
+  <NavItem
+    href="/zone-admin/attendance"
+    label="Attendance"
+    collapsed={collapsed}
+  />
+
+  <NavItem
+    href="/zone-admin/reports"
+    label="Reports"
+    collapsed={collapsed}
+  />
 
   <div className="border-t border-sky-600/40 mt-4" />
-  <NavItem href="/" label="Open Public App" collapsed={collapsed} />
+
+  <NavItem
+    href="/"
+    label="Open Public App"
+    collapsed={collapsed}
+  />
 </nav>
 
-              
-
+                
+                
+                
+                
+                
+                
+                
+                
 
               <div className="mt-auto px-4 py-4 text-sm text-sky-100/90">
                 <div className={`${collapsed ? "text-center" : ""}`}>

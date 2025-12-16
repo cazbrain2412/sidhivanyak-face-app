@@ -55,9 +55,15 @@ if (token) {
     role = decoded.role;
 
     if (role === "ZONE_ADMIN") {
-      const zoneAdmin = await ZoneAdmin.findById(decoded.userId).lean();
-      allowedZones = zoneAdmin?.assignedZones || [];
-    }
+  const zoneAdmin = await ZoneAdmin.findById(decoded.userId)
+    .populate("assignedZones")
+    .lean();
+
+  allowedZones = zoneAdmin?.assignedZones?.map(z => z.name) || [];
+}
+
+      
+    
   } catch (e) {
     // ignore, fallback to SUPER_ADMIN
   }

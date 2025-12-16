@@ -1,10 +1,34 @@
 import dbConnect from "../../../../lib/mongodb";
 import Employee from "../../../../models/Employee";
+import Zone from "../../../../models/Zone";
+import mongoose from "mongoose";
+
 
 export async function POST(req) {
   try {
     await dbConnect();
     const body = await req.json();
+   let zoneId = null;
+
+if (body.zone) {
+  let zoneDoc = null;
+
+  if (mongoose.Types.ObjectId.isValid(body.zone)) {
+    zoneDoc = await Zone.findById(body.zone).select("_id");
+  } else {
+    zoneDoc = await Zone.findOne({ name: body.zone }).select("_id");
+  }
+
+  if (!zoneDoc) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Invalid zone selected" }),
+      { status: 400 }
+    );
+  }
+
+  zoneId = zoneDoc._id;
+}
+
 
     const payload = {
       code: body.code,
@@ -17,7 +41,9 @@ export async function POST(req) {
       bankAccount: body.bankAccount || null,
       ifsc: body.ifsc || null,
       address: body.address || null,
-      zone: body.zone || null,
+      zone: zoneId,
+
+
       division: body.division || null,
       department: body.department || null,
       category: body.category || null,

@@ -2,11 +2,23 @@ import jwt from "jsonwebtoken";
 import dbConnect from "@/lib/mongodb";
 import ZoneAdmin from "@/models/ZoneAdmin";
 
+function getTokenFromCookie(req) {
+  const cookieHeader = req.headers.get("cookie");
+  if (!cookieHeader) return null;
+
+  const cookies = cookieHeader.split(";").map(c => c.trim());
+  const tokenCookie = cookies.find(c => c.startsWith("token="));
+  if (!tokenCookie) return null;
+
+  return tokenCookie.split("=")[1];
+}
+
 export async function GET(req) {
   try {
     await dbConnect();
+   const token = getTokenFromCookie(req);
 
-    const token = req.cookies.get("token")?.value;
+    
     if (!token) {
       return new Response(JSON.stringify({ success: false }), { status: 401 });
     }

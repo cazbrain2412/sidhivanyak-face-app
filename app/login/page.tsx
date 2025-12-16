@@ -18,27 +18,36 @@ export default function LoginPage() {
   try {
     const res = await fetch("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      headers: {
+        "Content-Type": "application/json",
+      },
       credentials: "include",
+      body: JSON.stringify({ email, password }),
     });
 
     const data = await res.json();
 
     if (!res.ok) {
       setError(data.message || "Invalid credentials");
-      setLoading(false);
       return;
     }
 
-    // 🔥 IMPORTANT: HARD REDIRECT (not router.push)
-    window.location.href = data.redirectPath || "/admin/dashboard";
-
-  } catch (err) {
-    setError("Something went wrong");
-    setLoading(false);
-  }
+    if (data.role === "SUPER_ADMIN") {
+  router.replace("/admin/dashboard");
+} else if (data.role === "ZONE_ADMIN") {
+  router.replace("/zone-admin/dashboard");
+} else if (data.role === "SUPERVISOR") {
+  router.replace("/supervisor/dashboard");
+} else {
+  setError("Unauthorized role");
+}
+} catch (err) {
+  setError("Something went wrong");
+} finally {
+  setLoading(false);
+}
 };
+
 
 
         
@@ -46,9 +55,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <form
-        onSubmit={handleLogin}
-        className="bg-white p-8 rounded shadow-md w-96"
-      >
+  onSubmit={handleLogin}
+  className="bg-white p-8 rounded shadow-md w-96"
+>
+
+
+        
+       
+      
         <h1 className="text-2xl font-bold mb-6 text-center">
           Login
         </h1>
