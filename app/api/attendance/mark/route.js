@@ -163,7 +163,10 @@ if (best.division) {
           },
           { status: 200 }
         );
-      } else {
+        // OUT without IN -> still HALF
+  statusValue = "HALF";
+}
+} else {
         // already have a record today
         if (hasInFlag(existing)) {
           // we already punched in once -> do not create second IN
@@ -209,93 +212,92 @@ if (best.division) {
       }
     }
 
-    // ---------- ACTION: PUNCH OUT ----------
-    // fetch division config (if exists)
-let attendanceType = "DOUBLE_PUNCH";
-let minHoursForPresent = 2;
+   
+    
+// ---------- ACTION: PUNCH OUT ----------
+if (action === "out") {
 
-if (best.division) {
-  const div = await Division.findOne({ name: best.division }).lean();
-  if (div) {
-    attendanceType = div.attendanceType || "DOUBLE_PUNCH";
-    minHoursForPresent = div.minHoursForPresent ?? 2;
+  if (!existing) {
+    return NextResponse.json(
+      { success: false, message: "Punch IN required before OUT" },
+      { status: 400 }
+    );
   }
-}
 
-// SINGLE PUNCH → always PRESENT on first punch
-if (attendanceType === "SINGLE_PUNCH") {
-  const updated = await Attendance.findByIdAndUpdate(
+  const hadIn =
+    !!existing.punchIn ||
+    !!existing.in ||
+    !!existing.punch?.in ||
+    !!existing.punchInTime;
+
+  let workHours = 0;
+  let statusValue = "HALF";
+
+  if (hadIn) {
+    const inTime =
+      existing.punchIn ||
+      existing.in ||
+      existing.punch?.in ||
+      existing.punchInTime;
+
+    const diffMs = now.getTime() - new Date(inTime).getTime();
+    workHours = diffMs / (1000 * 60 * 60);
+
+    if (attendanceType === "SINGLE_PUNCH") {
+      statusValue = "PRESENT";
+    } else {
+      statusValue = workHours >= minHoursForPresent ? "PRESENT" : "HALF";
+    }
+  }
+
+  const updatedOut = await Attendance.findByIdAndUpdate(
     existing._id,
     {
       $set: {
         punchOut: now,
-        status: "PRESENT",
+        status: statusValue,
         ...buildLocationSet(),
       },
     },
     { new: true }
   ).lean();
 
-  return NextResponse.json({
-    success: true,
-    matched: true,
-    employee: best,
-    record: updated,
-    status: "PRESENT",
-    rule: "SINGLE_PUNCH",
-    bestDist,
-  });
-}
-
-// DOUBLE PUNCH → hour-based logic
-const punchInTime = existing.punchIn ? new Date(existing.punchIn) : null;
-let status = "HALF";
-
-if (punchInTime) {
-  const workMs = now.getTime() - punchInTime.getTime();
-  const workHours = workMs / (1000 * 60 * 60);
-
-  if (workHours >= minHoursForPresent) {
-    status = "PRESENT";
-  }
-}
-
-const updated = await Attendance.findByIdAndUpdate(
-  existing._id,
-  {
-    $set: {
-      punchOut: now,
-      status,
-      ...buildLocationSet(),
+  return NextResponse.json(
+    {
+      success: true,
+      matched: true,
+      employee: best,
+      record: updatedOut,
+      inToday: hadIn,
+      outToday: true,
+      workHours,
+      bestDist,
     },
-  },
-  { new: true }
-).lean();
+    { status: 200 }
+  );
+}
 
-return NextResponse.json({
-  success: true,
-  matched: true,
-  employee: best,
-  record: updated,
-  status,
-  rule: "DOUBLE_PUNCH",
-  minHoursForPresent,
-  bestDist,
-});
+ 
+    
+      
+
+
+ 
+
+
+
 
         
           
     
 
-    // compute hours between IN and OUT (if IN exists)
+    
     
 
     // compute hours between IN and OUT (if IN exists)
 let workHours = 0;
 let statusValue = "HALF";
 
-let workHours = 0;
-let statusValue = "HALF";
 
 if (hadIn) {
   const inTime =
@@ -333,10 +335,7 @@ if (hadIn) {
     // fallback (old behavior)
     statusValue = workHours >= 2 ? "PRESENT" : "HALF";
   }
-} else {
-  // OUT without IN -> still HALF
-  statusValue = "HALF";
-}
+
 
 const updatedOut = await Attendance.findByIdAndUpdate(
   existing._id,
