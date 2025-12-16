@@ -1,372 +1,135 @@
 /**
- * app/api/attendance/mark/route.js
- *
- * Face match + Punch IN / Punch OUT with 2-hour logic
- * - Uses server-side descriptor matching
- * - One record per employee per day (dateKey = YYYY-MM-DD)
- * - Status rules:
- *    - No record  -> Absent (handled by UI as A)
- *    - Punch IN only  -> HALF
- *    - Punch IN + Punch OUT, workHours >= 2 -> PRESENT
- *    - Punch IN + Punch OUT, workHours < 2  -> HALF
- *    - Punch OUT only (no IN) -> HALF
+ * Face match + Punch IN / Punch OUT
+ * Supports SINGLE_PUNCH & DOUBLE_PUNCH (division based)
  */
 
 import dbConnect from "@/lib/mongodb";
 import Employee from "@/models/Employee";
 import Attendance from "@/models/Attendance";
-import { NextResponse } from "next/server";
 import Division from "@/models/Division";
-
+import { NextResponse } from "next/server";
 
 function euclidean(a, b) {
   let s = 0;
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
     const d = (Number(a[i]) || 0) - (Number(b[i]) || 0);
     s += d * d;
   }
   return Math.sqrt(s);
 }
 
-// helper: build date key YYYY-MM-DD in server local time
 function buildDateKey(d = new Date()) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return d.toISOString().slice(0, 10);
 }
 
 export async function POST(req) {
   await dbConnect();
   try {
-    const body = await req.json();
-    const { descriptor, action, location } = body; // <-- location added
+    const { descriptor, action, location } = await req.json();
 
     if (!Array.isArray(descriptor) || descriptor.length < 10) {
-      return NextResponse.json(
-        { success: false, message: "Descriptor required for verification" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, message: "Invalid face data" }, { status: 400 });
     }
 
-    if (!action || (action !== "in" && action !== "out")) {
-      return NextResponse.json(
-        { success: false, message: "Invalid action. Use 'in' or 'out'." },
-        { status: 400 }
-      );
+    if (!["in", "out"].includes(action)) {
+      return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
     }
 
-    // 1) Load all enrolled employees (with faceDescriptor)
-    const employees = await Employee.find({
-      faceDescriptor: { $exists: true, $ne: [] },
-    }).lean();
-
-    if (!employees || employees.length === 0) {
-      return NextResponse.json(
-        { success: false, matched: false, message: "No enrolled faces on server" },
-        { status: 400 }
-      );
+    const employees = await Employee.find({ faceDescriptor: { $ne: [] } }).lean();
+    if (!employees.length) {
+      return NextResponse.json({ success: false, message: "No faces enrolled" }, { status: 400 });
     }
 
-    // 2) Find best match
-    let best = null;
-    let bestDist = Infinity;
-    for (const emp of employees) {
-      if (!emp.faceDescriptor || emp.faceDescriptor.length === 0) continue;
-      const dist = euclidean(descriptor, emp.faceDescriptor);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = emp;
+    let best = null, bestDist = Infinity;
+    for (const e of employees) {
+      const d = euclidean(descriptor, e.faceDescriptor);
+      if (d < bestDist) {
+        bestDist = d;
+        best = e;
       }
     }
 
-    const THRESH = 0.55;
-    if (!best || bestDist > THRESH) {
-      return NextResponse.json(
-        { success: false, matched: false, message: "No face match", bestDist },
-        { status: 200 }
-      );
+    if (!best || bestDist > 0.55) {
+      return NextResponse.json({ success: false, matched: false }, { status: 200 });
     }
 
     const now = new Date();
     const dateKey = buildDateKey(now);
-    const matchedCode = best.code;
-   // 🔧 Load division attendance rules
-let attendanceType = "DOUBLE_PUNCH";
-let minHoursForPresent = 2;
 
-if (best.division) {
-  const div = await Division.findOne({ name: best.division }).lean();
-  if (div) {
-    attendanceType = div.attendanceType || "DOUBLE_PUNCH";
-    minHoursForPresent =
-      typeof div.minHoursForPresent === "number"
-        ? div.minHoursForPresent
-        : 2;
-  }
-}
+    let attendanceType = "DOUBLE_PUNCH";
+    let minHoursForPresent = 2;
 
-    // Try to find an existing record for this employee + day
-    let existing = await Attendance.findOne({
-      employeeCode: matchedCode,
+    if (best.division) {
+      const div = await Division.findOne({ name: best.division }).lean();
+      if (div) {
+        attendanceType = div.attendanceType || attendanceType;
+        minHoursForPresent = div.minHoursForPresent ?? minHoursForPresent;
+      }
+    }
+
+    const existing = await Attendance.findOne({
+      employeeCode: best.code,
       date: dateKey,
-    }).lean();
+    });
 
-    // small helper: attach location fields if provided
-    function buildLocationSet() {
-      if (!location || typeof location !== "object") return {};
-      const lat = Number(location.lat);
-      const lng = Number(location.lng);
-      const accuracy = location.accuracy != null ? Number(location.accuracy) : null;
-      const set = {};
-      if (!Number.isNaN(lat)) set.locationLat = lat;
-      if (!Number.isNaN(lng)) set.locationLng = lng;
-      if (accuracy != null && !Number.isNaN(accuracy)) set.locationAccuracy = accuracy;
-      return set;
-    }
-
-    // little helpers to check fields even if schema names differ
-    const hasInFlag = (rec) =>
-      !!(rec?.punchIn || rec?.in || rec?.punch?.in || rec?.punchInTime);
-    const hasOutFlag = (rec) =>
-      !!(rec?.punchOut || rec?.out || rec?.punch?.out || rec?.punchOutTime);
-
-    // ---------- ACTION: PUNCH IN ----------
+    // ---------------- PUNCH IN ----------------
     if (action === "in") {
-      if (!existing) {
-        // first punch of the day -> create record
-        const toCreate = {
-          employeeCode: matchedCode,
-          employeeName: best.name || best.code,
-          date: dateKey,
-          punchIn: now,
-          status: "HALF", // until we get OUT with >=2 hours
-          ...buildLocationSet(),
-        };
-        if (best.zone) toCreate.zone = best.zone;
-        if (best.division) toCreate.division = best.division;
-        if (best.department) toCreate.department = best.department;
-        if (best.supervisorCode) toCreate.supervisorCode = best.supervisorCode;
-
-        const created = await Attendance.create(toCreate);
-        return NextResponse.json(
-          {
-            success: true,
-            matched: true,
-            employee: best,
-            record: created,
-            inToday: true,
-            outToday: hasOutFlag(created),
-            nextAction: "out",
-            bestDist,
-          },
-          { status: 200 }
-        );
-        // OUT without IN -> still HALF
-  statusValue = "HALF";
-}
-} else {
-        // already have a record today
-        if (hasInFlag(existing)) {
-          // we already punched in once -> do not create second IN
-          return NextResponse.json(
-            {
-              success: false,
-              matched: true,
-              message: "Punch IN already exists for today",
-              inToday: true,
-              outToday: hasOutFlag(existing),
-              bestDist,
-            },
-            { status: 400 }
-          );
-        }
-
-        // set punchIn on existing doc
-        const updated = await Attendance.findByIdAndUpdate(
-          existing._id,
-          {
-            $set: {
-              punchIn: now,
-              status: "HALF", // until OUT decides full/half
-              ...buildLocationSet(),
-            },
-          },
-          { new: true }
-        ).lean();
-
-        return NextResponse.json(
-          {
-            success: true,
-            matched: true,
-            employee: best,
-            record: updated,
-            inToday: true,
-            outToday: hasOutFlag(updated),
-            nextAction: "out",
-            bestDist,
-          },
-          { status: 200 }
-        );
+      if (existing?.punchIn) {
+        return NextResponse.json({ success: false, message: "Already punched in" }, { status: 400 });
       }
+
+      const record = existing
+        ? await Attendance.findByIdAndUpdate(
+            existing._id,
+            { $set: { punchIn: now, status: "HALF" } },
+            { new: true }
+          )
+        : await Attendance.create({
+            employeeCode: best.code,
+            employeeName: best.name,
+            date: dateKey,
+            punchIn: now,
+            status: "HALF",
+            division: best.division,
+            zone: best.zone,
+          });
+
+      return NextResponse.json({ success: true, record }, { status: 200 });
     }
 
-   
-    
-// ---------- ACTION: PUNCH OUT ----------
-if (action === "out") {
-  if (!existing) {
-    return NextResponse.json(
-      { success: false, message: "Punch IN required before OUT" },
-      { status: 400 }
-    );
-  }
-
-  const hadIn = !!(
-    existing.punchIn ||
-    existing.in ||
-    existing.punch?.in ||
-    existing.punchInTime
-  );
-
-  let workHours = 0;
-  let statusValue = "HALF";
-
-  if (hadIn) {
-    const inTime =
-      existing.punchIn ||
-      existing.in ||
-      existing.punch?.in ||
-      existing.punchInTime;
-
-    const diffMs = now.getTime() - new Date(inTime).getTime();
-    workHours = diffMs / (1000 * 60 * 60);
-
-    if (attendanceType === "SINGLE_PUNCH") {
-      statusValue = "PRESENT";
-    } else {
-      statusValue = workHours >= minHoursForPresent ? "PRESENT" : "HALF";
+    // ---------------- PUNCH OUT ----------------
+    if (!existing?.punchIn) {
+      return NextResponse.json({ success: false, message: "Punch IN required" }, { status: 400 });
     }
-  } else {
-    statusValue = "HALF";
-  }
 
-  const updatedOut = await Attendance.findByIdAndUpdate(
-    existing._id,
-    {
-      $set: {
-        punchOut: now,
-        status: statusValue,
-        ...buildLocationSet(),
+    const diffMs = now - new Date(existing.punchIn);
+    const workHours = diffMs / (1000 * 60 * 60);
+
+    let status =
+      attendanceType === "SINGLE_PUNCH"
+        ? "PRESENT"
+        : workHours >= minHoursForPresent
+        ? "PRESENT"
+        : "HALF";
+
+    const updated = await Attendance.findByIdAndUpdate(
+      existing._id,
+      {
+        $set: {
+          punchOut: now,
+          status,
+          ...(location || {}),
+        },
       },
-    },
-    { new: true }
-  ).lean();
+      { new: true }
+    );
 
-  return NextResponse.json(
-    {
-      success: true,
-      matched: true,
-      employee: best,
-      record: updatedOut,
-      inToday: hadIn,
-      outToday: true,
-      workHours,
-      bestDist,
-    },
-    { status: 200 }
-  );
-}
-
-
-   
-   
- 
-
- 
-    // compute hours between IN and OUT (if IN exists)
-let workHours = 0;
-let statusValue = "HALF";
-
-
-if (hadIn) {
-  const inTime =
-    existing.punchIn ||
-    existing.in ||
-    existing.punch?.in ||
-    existing.punchInTime;
-
-  const diffMs = now.getTime() - new Date(inTime).getTime();
-  workHours = diffMs / (1000 * 60 * 60);
-
-  if (attendanceType === "SINGLE_PUNCH") {
-    statusValue = "PRESENT";
-  } else {
-    statusValue = workHours >= minHoursForPresent ? "PRESENT" : "HALF";
+    return NextResponse.json(
+      { success: true, record: updated, workHours },
+      { status: 200 }
+    );
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 });
   }
-} else {
-  // OUT without IN
-  statusValue = "HALF";
 }
-
-
-
-  // 🔥 DIVISION-BASED LOGIC
-  if (best.division) {
-    const division = await Division.findOne({ name: best.division }).lean();
-
-    if (division?.attendanceType === "SINGLE_PUNCH") {
-      statusValue = "PRESENT";
-    } else {
-      const minHours = division?.minHoursForPresent ?? 2;
-      statusValue = workHours >= minHours ? "PRESENT" : "HALF";
-    }
-  } else {
-    // fallback (old behavior)
-    statusValue = workHours >= 2 ? "PRESENT" : "HALF";
-  }
-
-
-const updatedOut = await Attendance.findByIdAndUpdate(
-  existing._id,
-  {
-    $set: {
-      punchOut: now,
-      status: statusValue,
-      ...buildLocationSet(),
-    },
-  },
-  { new: true }
-).lean();
-
-return NextResponse.json(
-  {
-    success: true,
-    matched: true,
-    employee: best,
-    record: updatedOut,
-    inToday: hadIn,
-    outToday: true,
-    workHours,
-    bestDist,
-  },
-  { status: 200 }
-);
-
-        }
-      } catch (err) {
-        console.error("attendance mark error", err);
-        return NextResponse.json(
-          { success: false, message: "Server error", error: String(err) },
-          { status: 500 }
-        );
-      }
-    }
-
-   
-
-
-      
-        
-
