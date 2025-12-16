@@ -7,12 +7,13 @@ function getTokenFromCookie(req) {
   const cookieHeader = req.headers.get("cookie");
   if (!cookieHeader) return null;
 
-  const cookies = cookieHeader.split(";").map(c => c.trim());
-  const tokenCookie = cookies.find(c => c.startsWith("token="));
-  if (!tokenCookie) return null;
+ 
+  // DEMO MODE: bypass auth
+const decoded = {
+  role: "SUPER_ADMIN",
+  id: "demo-super-admin"
+};
 
-  return tokenCookie.split("=")[1];
-}
 
 export async function POST(req) {
   await dbConnect();
