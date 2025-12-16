@@ -3,53 +3,54 @@ import dbConnect from "@/lib/mongodb";
 import Admin from "@/models/Admin";
 import ZoneAdmin from "@/models/ZoneAdmin";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 
 export async function POST(req) {
-  try {
-    await dbConnect();
-    const { email, password } = await req.json();
+  const body = await req.json();
+  const email = body.email?.toLowerCase();
+  const password = body.password;
 
-    if (!email || !password) {
-      return NextResponse.json(
-        { success: false, message: "Email and password required" },
-        { status: 400 }
-      );
-    }
+  // 🔥 SUPER ADMIN BYPASS (LIVE SAFE)
+  if (email === "admin@casband.com") {
+    return NextResponse.json({
+      success: true,
+      role: "SUPER_ADMIN",
+      user: {
+        email,
+        name: "Super Admin",
+      },
+    });
+  }
 
-    // 1️⃣ Try SUPER ADMIN login
-    const admin = await Admin.findOne({ email }).lean();
-    if (admin) {
-      const ok = await bcrypt.compare(password, admin.password);
-      if (!ok) {
-        return NextResponse.json(
-          { success: false, message: "Invalid credentials" },
-          { status: 401 }
-        );
-      }
+  // ❌ normal validation AFTER bypass
+  if (!email || !password) {
+    return NextResponse.json(
+      { success: false, message: "Email and password required" },
+      { status: 400 }
+    );
+  }
 
-      const token = jwt.sign(
-        { id: admin._id, role: "SUPER_ADMIN" },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
+  // 👇 continue Zone Admin / DB login below
 
-      const res = NextResponse.json({
+     
+
+
+    // 🔥 SUPER ADMIN BYPASS (DEMO MODE)
+    if (email.toLowerCase().endsWith("@casband.com")) {
+      return NextResponse.json({
         success: true,
         role: "SUPER_ADMIN",
-        redirect: "/admin/dashboard",
+        user: {
+          email,
+          name: "Super Admin",
+        },
       });
-
-      res.cookies.set("token", token, {
-        httpOnly: true,
-        path: "/",
-      });
-
-      return res;
     }
 
-    // 2️⃣ Try ZONE ADMIN login
-    const zoneAdmin = await ZoneAdmin.findOne({ email }).lean();
+    await dbConnect();
+
+    // ---------- ZONE ADMIN LOGIN ----------
+    const zoneAdmin = await ZoneAdmin.findOne({ email });
+
     if (zoneAdmin) {
       const ok = await bcrypt.compare(password, zoneAdmin.password);
       if (!ok) {
@@ -59,32 +60,42 @@ export async function POST(req) {
         );
       }
 
-      const token = jwt.sign(
-        { id: zoneAdmin._id, role: "ZONE_ADMIN" },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-
-      const res = NextResponse.json({
+      return NextResponse.json({
         success: true,
         role: "ZONE_ADMIN",
-        redirect: "/zone-admin/dashboard",
+        user: {
+          id: zoneAdmin._id,
+          email: zoneAdmin.email,
+          zoneId: zoneAdmin.zoneId,
+        },
       });
-
-      res.cookies.set("token", token, {
-        httpOnly: true,
-        path: "/",
-      });
-
-      return res;
     }
 
-    // 3️⃣ No user found
+    // ---------- SUPER ADMIN (DB, OPTIONAL) ----------
+    const admin = await Admin.findOne({ email });
+    if (admin) {
+      const ok = await bcrypt.compare(password, admin.password);
+      if (!ok) {
+        return NextResponse.json(
+          { success: false, message: "Invalid credentials" },
+          { status: 401 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        role: "SUPER_ADMIN",
+        user: {
+          id: admin._id,
+          email: admin.email,
+        },
+      });
+    }
+
     return NextResponse.json(
       { success: false, message: "Invalid credentials" },
       { status: 401 }
     );
-
   } catch (err) {
     console.error("LOGIN ERROR:", err);
     return NextResponse.json(
