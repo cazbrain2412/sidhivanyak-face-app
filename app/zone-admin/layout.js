@@ -43,6 +43,11 @@ export default function AdminLayout({ children }) {
   />
 
   {/* ❌ Zones / Divisions / Departments REMOVED for Zone Admin */}
+ <NavItem
+  href="/zone-admin/divisions"
+  label="Divisions"
+  collapsed={collapsed}
+/>
 
   <NavItem
     href="/zone-admin/supervisors"

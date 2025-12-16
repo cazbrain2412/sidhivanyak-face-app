@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 
-/**
- * DEMO MODE
- * Auth disabled temporarily for client demo
- */
-export function middleware(req) {
+export function middleware() {
   return NextResponse.next();
 }
 

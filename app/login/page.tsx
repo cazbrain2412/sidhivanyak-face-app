@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -8,91 +7,58 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setLoading(true);
-  setError("");
+  async function handleLogin(e: any) {
+    e.preventDefault();
+    setLoading(true);
 
-  try {
     const res = await fetch("/api/auth/login", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
 
-    const data = await res.json();
+    const j = await res.json();
+    setLoading(false);
 
     if (!res.ok) {
-      setError(data.message || "Invalid credentials");
+      alert(j.error || "Login failed");
       return;
     }
 
-    if (data.role === "SUPER_ADMIN") {
-  router.replace("/admin/dashboard");
-} else if (data.role === "ZONE_ADMIN") {
-  router.replace("/zone-admin/dashboard");
-} else if (data.role === "SUPERVISOR") {
-  router.replace("/supervisor/dashboard");
-} else {
-  setError("Unauthorized role");
-}
-} catch (err) {
-  setError("Something went wrong");
-} finally {
-  setLoading(false);
-}
-};
-
-
-
-        
+    if (j.role === "SUPER_ADMIN") {
+      router.push("/admin/dashboard");
+    } else {
+      router.push("/zone-admin/dashboard");
+    }
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <form
-  onSubmit={handleLogin}
-  className="bg-white p-8 rounded shadow-md w-96"
->
-
-
-        
-       
-      
-        <h1 className="text-2xl font-bold mb-6 text-center">
-          Login
-        </h1>
-
-        {error && (
-          <p className="text-red-600 text-sm mb-4">{error}</p>
-        )}
+        onSubmit={handleLogin}
+        className="bg-white p-6 rounded shadow w-80"
+      >
+        <h1 className="text-xl font-semibold mb-4">Login</h1>
 
         <input
-          type="email"
+          className="border w-full p-2 mb-3"
           placeholder="Email"
-          className="w-full border p-2 mb-4 rounded"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          required
         />
 
         <input
           type="password"
+          className="border w-full p-2 mb-4"
           placeholder="Password"
-          className="w-full border p-2 mb-6 rounded"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          required
         />
 
         <button
-          type="submit"
           disabled={loading}
-          className="w-full bg-black text-white py-2 rounded hover:bg-gray-800"
+          className="bg-black text-white w-full py-2"
         >
           {loading ? "Logging in..." : "Login"}
         </button>

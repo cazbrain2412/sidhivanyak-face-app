@@ -36,6 +36,12 @@ export default function ZoneAdminLayout({ children }) {
 
               {/* 🔥 ZONE ADMIN MENU */}
               <nav className="px-2 mb-6">
+                <NavItem
+  href="/zone-admin/divisions"
+  label="Divisions"
+  collapsed={collapsed}
+/>
+ 
                 <NavItem href="/zone-admin/dashboard" label="Dashboard" collapsed={collapsed} />
                 <NavItem href="/zone-admin/employees" label="Employees" collapsed={collapsed} />
                 <NavItem href="/zone-admin/supervisors" label="Supervisors" collapsed={collapsed} />
