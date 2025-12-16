@@ -216,7 +216,6 @@ if (best.division) {
     
 // ---------- ACTION: PUNCH OUT ----------
 if (action === "out") {
-
   if (!existing) {
     return NextResponse.json(
       { success: false, message: "Punch IN required before OUT" },
@@ -224,11 +223,12 @@ if (action === "out") {
     );
   }
 
-  const hadIn =
-    !!existing.punchIn ||
-    !!existing.in ||
-    !!existing.punch?.in ||
-    !!existing.punchInTime;
+  const hadIn = !!(
+    existing.punchIn ||
+    existing.in ||
+    existing.punch?.in ||
+    existing.punchInTime
+  );
 
   let workHours = 0;
   let statusValue = "HALF";
@@ -248,6 +248,8 @@ if (action === "out") {
     } else {
       statusValue = workHours >= minHoursForPresent ? "PRESENT" : "HALF";
     }
+  } else {
+    statusValue = "HALF";
   }
 
   const updatedOut = await Attendance.findByIdAndUpdate(
@@ -277,23 +279,12 @@ if (action === "out") {
   );
 }
 
- 
-    
-      
 
-
+   
+   
  
 
-
-
-
-        
-          
-    
-
-    
-    
-
+ 
     // compute hours between IN and OUT (if IN exists)
 let workHours = 0;
 let statusValue = "HALF";
@@ -362,6 +353,19 @@ return NextResponse.json(
   },
   { status: 200 }
 );
+
+        }
+      } catch (err) {
+        console.error("attendance mark error", err);
+        return NextResponse.json(
+          { success: false, message: "Server error", error: String(err) },
+          { status: 500 }
+        );
+      }
+    }
+
+   
+
 
       
         
