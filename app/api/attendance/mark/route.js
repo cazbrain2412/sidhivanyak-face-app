@@ -294,6 +294,9 @@ return NextResponse.json({
 let workHours = 0;
 let statusValue = "HALF";
 
+let workHours = 0;
+let statusValue = "HALF";
+
 if (hadIn) {
   const inTime =
     existing.punchIn ||
@@ -305,17 +308,15 @@ if (hadIn) {
   workHours = diffMs / (1000 * 60 * 60);
 
   if (attendanceType === "SINGLE_PUNCH") {
-    // ✅ Single punch → always PRESENT on OUT
     statusValue = "PRESENT";
   } else {
-    // ✅ Double punch → hours-based logic
-    statusValue =
-      workHours >= minHoursForPresent ? "PRESENT" : "HALF";
+    statusValue = workHours >= minHoursForPresent ? "PRESENT" : "HALF";
   }
 } else {
-  // OUT without IN → still HALF
+  // OUT without IN
   statusValue = "HALF";
 }
+
 
 
   // 🔥 DIVISION-BASED LOGIC
