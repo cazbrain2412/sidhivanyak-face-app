@@ -2,57 +2,42 @@ import dbConnect from "../../../../lib/mongodb";
 import Employee from "../../../../models/Employee";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "supersecret123";
-
 export async function GET(req) {
+  await dbConnect();
+
   try {
+    const url = new URL(req.url);
+    const supervisorCodeFromQuery = url.searchParams.get("code");
+
+    // 🔹 ADMIN / ZONE ADMIN FLOW (no token needed)
+    if (supervisorCodeFromQuery) {
+      const employees = await Employee.find({
+        supervisorCode: supervisorCodeFromQuery,
+      }).lean();
+
+      return Response.json({ success: true, employees });
+    }
+
+    // 🔹 SUPERVISOR SELF FLOW (token required)
     const auth = req.headers.get("authorization");
     if (!auth) {
-      return new Response(JSON.stringify({ success: false, error: "No token provided" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+      return Response.json({ success: false, employees: [] });
     }
 
     const token = auth.replace("Bearer ", "").trim();
     let decoded;
 
     try {
-      decoded = jwt.verify(token, JWT_SECRET);
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
-      return new Response(JSON.stringify({ success: false, error: "Invalid token" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+      return Response.json({ success: false, employees: [] });
     }
 
-    const url = new URL(req.url);
-    const supervisorFromQuery = url.searchParams.get("code");
+    const employees = await Employee.find({
+      supervisorCode: decoded.code,
+    }).lean();
 
-    await dbConnect();
-
-    // ✅ SUPERVISOR LOGIN
-    if (decoded.role === "supervisor") {
-      const employees = await Employee.find({
-        supervisorCode: decoded.code,
-      }).lean();
-
-      return Response.json({ success: true, employees });
-    }
-
-    // ✅ ADMIN / ZONE ADMIN
-    if ((decoded.role === "admin" || decoded.role === "zoneadmin") && supervisorFromQuery) {
-      const employees = await Employee.find({
-        supervisorCode: supervisorFromQuery,
-      }).lean();
-
-      return Response.json({ success: true, employees });
-    }
-
-    return Response.json(
-      { success: false, employees: [] },
-      { status: 200 }
-    );
+    return Response.json({ success: true, employees });
   } catch (err) {
     return Response.json(
       { success: false, error: err.message },
