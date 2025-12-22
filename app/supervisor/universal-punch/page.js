@@ -237,14 +237,18 @@ if (!data.success) {
     setDistance(data.bestDist ?? data.dist ?? null);
   }
 
-  // ✅ NEW: store failed result for BIG UI display
-  setLastResult({
-    name: data.employee?.name || "",
-    code: data.employee?.code || "",
-    action: action === "in" ? "PUNCH IN" : "PUNCH OUT",
-    success: false,
-    message: data.message || data.error || "Attendance failed",
-  });
+
+
+  const emp = data.employee || matchedEmp;
+
+setLastResult({
+  name: emp?.name || "",
+  code: emp?.code || "",
+  action: action === "in" ? "PUNCH IN" : "PUNCH OUT",
+  success: false,
+  message: data.message || data.error || "Attendance failed",
+});
+
 
   setBusy(false);
   return;
@@ -364,7 +368,8 @@ const displayEmpLabel = matchedEmp
             background: "#f9f9f9",
             cursor: "pointer",
           }}
-          onClick={() => router.back()}
+          onClick={() => router.push("/supervisor/dashboard")}
+
         >
           Back
         </button>
@@ -521,6 +526,90 @@ const displayEmpLabel = matchedEmp
           )}
         </div>
       )}
+
+
+
+{lastResult && (
+  <div
+    style={{
+      marginTop: 14,
+      padding: 14,
+      borderRadius: 14,
+      border: lastResult.success ? "2px solid #22c55e" : "2px solid #ef4444",
+      background: lastResult.success ? "#ecfdf5" : "#fef2f2",
+      textAlign: "center",
+    }}
+  >
+    <div
+      style={{
+        fontSize: 18,
+        fontWeight: 800,
+        color: lastResult.success ? "#166534" : "#7f1d1d",
+        marginBottom: 6,
+      }}
+    >
+      {lastResult.success ? "ATTENDANCE MARKED" : "ATTENDANCE FAILED"}
+    </div>
+
+    {lastResult.name && (
+      <div style={{ fontSize: 16, fontWeight: 700 }}>
+        Name: <span style={{ fontWeight: 900 }}>{lastResult.name}</span>
+      </div>
+    )}
+
+    {lastResult.code && (
+      <div style={{ fontSize: 15, marginTop: 4 }}>
+        Employee Code:{" "}
+        <span style={{ fontWeight: 900 }}>{lastResult.code}</span>
+      </div>
+    )}
+
+    <div
+      style={{
+        marginTop: 6,
+        fontSize: 14,
+        fontWeight: 700,
+      }}
+    >
+      {lastResult.action}
+    </div>
+
+    <div style={{ marginTop: 6, fontSize: 13 }}>
+      {lastResult.message}
+    </div>
+
+    <button
+      onClick={() => {
+        setLastResult(null);
+        setMatchedEmp(null);
+        setLastActionInfo("");
+        setStatus("ready for next attendance");
+      }}
+      style={{
+        marginTop: 12,
+        padding: "10px 18px",
+        borderRadius: 10,
+        border: "none",
+        background: "#2563eb",
+        color: "#fff",
+        fontWeight: 700,
+        cursor: "pointer",
+      }}
+    >
+      Next Attendance
+    </button>
+  </div>
+)}
+
+
+
+
+
+
+
+
+
+
 
       {/* STATUS LINES */}
       <div style={{ marginTop: 4, fontSize: 12, color: "#555" }}>

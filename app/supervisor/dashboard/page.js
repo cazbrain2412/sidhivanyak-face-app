@@ -37,9 +37,11 @@ export default function SupervisorDashboardPage() {
   }
 
   // 🔹 Supervisor self punch (already existing)
-  function openCamera() {
-    router.push("/supervisor/face-punch?self=1");
-  }
+  // 🔹 Supervisor self punch
+function openCamera() {
+  router.push("/supervisor/self-attendance");
+}
+
 
   // 🔹 Supervisor self calendar (already existing)
   function viewCalendar() {

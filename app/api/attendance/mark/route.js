@@ -8,6 +8,8 @@ import Employee from "@/models/Employee";
 import Attendance from "@/models/Attendance";
 import Division from "@/models/Division";
 import { NextResponse } from "next/server";
+import Supervisor from "@/models/Supervisor";
+import SupervisorAttendance from "@/models/SupervisorAttendance";
 
 function euclidean(a, b) {
   let s = 0;
@@ -22,114 +24,179 @@ function buildDateKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+
+
+
+
 export async function POST(req) {
   await dbConnect();
+
   try {
-    const { descriptor, action, location } = await req.json();
+    const { descriptor, action, location, mode } = await req.json();
+    const isSupervisor = mode === "supervisor";
 
     if (!Array.isArray(descriptor) || descriptor.length < 10) {
-      return NextResponse.json({ success: false, message: "Invalid face data" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: "Invalid face data" },
+        { status: 400 }
+      );
     }
 
     if (!["in", "out"].includes(action)) {
-      return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: "Invalid action" },
+        { status: 400 }
+      );
     }
 
-    const employees = await Employee.find({ faceDescriptor: { $ne: [] } }).lean();
-    if (!employees.length) {
-      return NextResponse.json({ success: false, message: "No faces enrolled" }, { status: 400 });
+    const people = isSupervisor
+      ? await Supervisor.find({ faceDescriptor: { $ne: [] } }).lean()
+      : await Employee.find({ faceDescriptor: { $ne: [] } }).lean();
+
+    if (!people.length) {
+      return NextResponse.json(
+        { success: false, message: "No faces enrolled" },
+        { status: 400 }
+      );
     }
 
-    let best = null, bestDist = Infinity;
-    for (const e of employees) {
-      const d = euclidean(descriptor, e.faceDescriptor);
+    // ---------- FACE MATCHING ----------
+    let best = null;
+    let bestDist = Infinity;
+
+    for (const p of people) {
+      if (!Array.isArray(p.faceDescriptor)) continue;
+      const d = euclidean(descriptor, p.faceDescriptor);
       if (d < bestDist) {
         bestDist = d;
-        best = e;
+        best = p;
       }
     }
 
-    if (!best || bestDist > 0.55) {
-      return NextResponse.json({ success: false, matched: false }, { status: 200 });
+    if (!best) {
+      return NextResponse.json(
+        { success: false, message: "Face not matched" },
+        { status: 400 }
+      );
     }
 
     const now = new Date();
-    const dateKey = buildDateKey(now);
+    const dateKey = now.toISOString().slice(0, 10);
 
-    let attendanceType = "DOUBLE_PUNCH";
-    let minHoursForPresent = 2;
-
-    if (best.division) {
-      const div = await Division.findOne({ name: best.division }).lean();
-      if (div) {
-        attendanceType = div.attendanceType || attendanceType;
-        minHoursForPresent = div.minHoursForPresent ?? minHoursForPresent;
-      }
-    }
-
-    const existing = await Attendance.findOne({
-      employeeCode: best.code,
-      date: dateKey,
-    });
+    const existing = isSupervisor
+      ? await SupervisorAttendance.findOne({
+          supervisorId: best._id,
+          date: dateKey,
+        })
+      : await Attendance.findOne({
+          employeeCode: best.code,
+          date: dateKey,
+        });
 
     // ---------------- PUNCH IN ----------------
     if (action === "in") {
       if (existing?.punchIn) {
-        return NextResponse.json({ success: false, message: "Already punched in" }, { status: 400 });
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Already punched in",
+            employee: { name: best.name, code: best.code },
+          },
+          { status: 400 }
+        );
       }
 
-      const record = existing
-        ? await Attendance.findByIdAndUpdate(
-            existing._id,
-            { $set: { punchIn: now, status: "HALF" } },
-            { new: true }
-          )
-        : await Attendance.create({
-            employeeCode: best.code,
-            employeeName: best.name,
-            date: dateKey,
-            punchIn: now,
-            status: "HALF",
-            division: best.division,
-            zone: best.zone,
-          });
+      if (isSupervisor) {
+        await SupervisorAttendance.create({
+          supervisorId: best._id,
+          supervisorName: best.name,
+          date: dateKey,
+          punchIn: now,
+          status: "HALF",
+          location,
+        });
+      } else {
+        await Attendance.create({
+          employeeCode: best.code,
+          employeeName: best.name,
+          date: dateKey,
+          punchIn: now,
+          status: "HALF",
+          location,
+        });
+      }
 
-      return NextResponse.json({ success: true, record }, { status: 200 });
+      return NextResponse.json({ success: true }, { status: 200 });
     }
 
     // ---------------- PUNCH OUT ----------------
-    if (!existing?.punchIn) {
-      return NextResponse.json({ success: false, message: "Punch IN required" }, { status: 400 });
+    if (action === "out") {
+      if (!existing?.punchIn) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Punch in not found",
+            employee: { name: best.name, code: best.code },
+          },
+          { status: 400 }
+        );
+      }
+
+      if (existing?.punchOut) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Already punched out",
+            employee: { name: best.name, code: best.code },
+          },
+          { status: 400 }
+        );
+      }
+
+      await existing.updateOne({
+        $set: { punchOut: now, status: "FULL" },
+      });
+
+      return NextResponse.json({ success: true }, { status: 200 });
     }
 
-    const diffMs = now - new Date(existing.punchIn);
-    const workHours = diffMs / (1000 * 60 * 60);
-
-    let status =
-      attendanceType === "SINGLE_PUNCH"
-        ? "PRESENT"
-        : workHours >= minHoursForPresent
-        ? "PRESENT"
-        : "HALF";
-
-    const updated = await Attendance.findByIdAndUpdate(
-      existing._id,
-      {
-        $set: {
-          punchOut: now,
-          status,
-          ...(location || {}),
-        },
-      },
-      { new: true }
-    );
-
     return NextResponse.json(
-      { success: true, record: updated, workHours },
-      { status: 200 }
+      { success: false, message: "Invalid action" },
+      { status: 400 }
     );
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Server error" },
+      { status: 500 }
+    );
   }
 }
+
+
+
+
+
+
+   
+
+   
+
+
+     
+ 
+   
+             
+
+
+ 
+
+     
+    
+
+
+
+
+  
+
+    

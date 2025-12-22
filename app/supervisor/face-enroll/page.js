@@ -92,57 +92,7 @@ useEffect(() => {
        
         
 
-  async function captureOneSample() {
-    if (!videoRef.current) {
-      setStatus("video not ready");
-      return null;
-    }
-    if (!modelsLoaded) {
-      setStatus("models still loading…");
-      return null;
-    }
-
-    try {
-      const faceapi = await import("face-api.js");
-      const options = new faceapi.TinyFaceDetectorOptions();
-
-      setStatus("detecting face…");
-      const result = await faceapi
-        .detectSingleFace(videoRef.current, options)
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-
-      if (!result || !result.descriptor) {
-        setStatus("no face detected — hold still, center face.");
-        return null;
-      }
-
-      setStatus("sample captured");
-      return Array.from(result.descriptor);
-    } catch (err) {
-      console.error(err);
-      setStatus("face detection error: " + (err.message || String(err)));
-      return null;
-    }
-  }
-
-  function averageDescriptors(list) {
-    if (!list.length) return [];
-    const len = list[0].length;
-    const out = new Array(len).fill(0);
-    for (const arr of list) {
-      for (let i = 0; i < len; i++) {
-        out[i] += Number(arr[i]) || 0;
-      }
-    }
-    for (let i = 0; i < len; i++) {
-      out[i] /= list.length;
-    }
-    return out;
-  }
-
-  
-  async function handleCaptureClick() {
+async function handleCaptureClick() {
   if (busy) return;
   setBusy(true);
 
@@ -150,19 +100,16 @@ useEffect(() => {
     // ✅ ALLOW SELF ENROLL
     if (!empCodeParam && !selfMode) {
       setStatus("No employee code supplied in URL.");
-      setBusy(false);
       return;
     }
 
     if (!modelsLoaded) {
       setStatus("Face models not loaded yet");
-      setBusy(false);
       return;
     }
 
     if (!videoRef.current) {
       setStatus("Camera not ready");
-      setBusy(false);
       return;
     }
 
@@ -178,7 +125,6 @@ useEffect(() => {
 
     if (!detection) {
       setStatus("No face detected — look at camera");
-      setBusy(false);
       return;
     }
 
@@ -197,6 +143,16 @@ useEffect(() => {
     setBusy(false);
   }
 }
+
+      
+      
+ 
+
+ 
+ 
+
+    
+      
 
 
 
@@ -230,8 +186,9 @@ useEffect(() => {
         <h2 style={{ flex: 1, fontSize: 20, fontWeight: 600, margin: 0 }}>
           Face Enroll
         </h2>
-        <button
-          onClick={() => router.back()}
+          onClick={() => router.back()}<button
+          onClick={() => router.push("/supervisor/dashboard")}
+
           style={{
             borderRadius: 20,
             border: "1px solid #ccc",
