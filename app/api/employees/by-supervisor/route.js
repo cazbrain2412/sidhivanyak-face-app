@@ -27,7 +27,13 @@ export async function GET(req) {
       });
     }
 
-    const supervisorCode = decoded.code;
+    const url = new URL(req.url);
+const supervisorFromQuery = url.searchParams.get("code");
+
+// Supervisor self-login → JWT
+// Admin / Zone Admin → query param
+const supervisorCode = supervisorFromQuery || decoded.code;
+
 
     await dbConnect();
 
