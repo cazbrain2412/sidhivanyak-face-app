@@ -31,11 +31,14 @@ export default function AttendanceReportsCalendar() {
   useEffect(() => {
   if (!supervisor) {
     setEmployees([]);
-    setEmployee("");
+    setEmployee(""); // ✅ RESET
     return;
   }
 
-  const token = localStorage.getItem("token"); // SAME token used across app
+  const token = localStorage.getItem("token");
+
+  // 🔥 THIS LINE FIXES THE BUG
+  setEmployee(""); // ✅ IMPORTANT
 
   fetch(`/api/employees/by-supervisor?code=${supervisor}`, {
     headers: {
@@ -50,11 +53,12 @@ export default function AttendanceReportsCalendar() {
         setEmployees([]);
       }
     })
-    .catch(err => {
-      console.error("EMPLOYEE LOAD ERROR:", err);
-      setEmployees([]);
-    });
+    .catch(() => setEmployees([]));
 }, [supervisor]);
+
+
+  
+    
 
 
   // ---------------- LOAD CALENDAR REPORT ----------------
@@ -116,7 +120,7 @@ export default function AttendanceReportsCalendar() {
         <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="border px-2 py-1" />
         <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="border px-2 py-1" />
 
-        <select value={zone} onChange={e => setZone(e.target.value)} className="border px-2 py-1">
+          value={employee || ""}<select value={zone} onChange={e => setZone(e.target.value)} className="border px-2 py-1">
           <option value="">All Zones</option>
           {zones.map(z => <option key={z._id} value={z.name}>{z.name}</option>)}
         </select>
@@ -131,15 +135,19 @@ export default function AttendanceReportsCalendar() {
           {supervisors.map(s => <option key={s._id} value={s.code}>{s.name}</option>)}
         </select>
 
-        <select value={employee} onChange={e => setEmployee(e.target.value)} className="border px-2 py-1">
-          <option value="">All Employees</option>
-          {employees.map(emp => (
-            <option key={emp._id} value={emp.code}>
-              {emp.name} ({emp.code})
-            </option>
-          ))}
-        </select>
-      </div>
+        <select
+  value={employee || ""}
+  onChange={e => setEmployee(e.target.value)}
+  className="border px-2 py-1"
+>
+  <option value="">All Employees</option>
+  {employees.map(emp => (
+    <option key={emp._id} value={emp.code}>
+      {emp.name} ({emp.code})
+    </option>
+  ))}
+</select>
+
 
       <div className="flex gap-3 mb-4">
         <button onClick={loadCalendar} className="border px-4 py-1 bg-gray-100">
