@@ -35,7 +35,12 @@ export default function AttendanceReportsCalendar() {
     return;
   }
 
-  const token = localStorage.getItem("token");
+  const token =
+  localStorage.getItem("adminToken") ||
+  localStorage.getItem("zoneAdminToken") ||
+  localStorage.getItem("supervisorToken");
+
+
 
   // 🔥 THIS LINE FIXES THE BUG
   setEmployee(""); // ✅ IMPORTANT
@@ -80,7 +85,15 @@ export default function AttendanceReportsCalendar() {
 
       const res = await fetch(`/api/reports/calendar?${params.toString()}`);
       const json = await res.json();
-      setData(json);
+
+// ✅ SAFETY: ensure calendar data shape
+if (json && json.days && json.rows) {
+  setData(json);
+} else {
+  console.error("Invalid calendar data:", json);
+  setData({ days: [], rows: [] });
+}
+
     } catch (err) {
       console.error("CALENDAR REPORT ERROR:", err);
       alert("Failed to load report");
@@ -115,50 +128,98 @@ export default function AttendanceReportsCalendar() {
       <h1 className="text-xl font-bold mb-4">Attendance Calendar Report</h1>
 
       {/* FILTER BAR */}
-      <div className="grid grid-cols-7 gap-3 mb-4">
-        <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="border px-2 py-1" />
-        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="border px-2 py-1" />
-        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="border px-2 py-1" />
+      
+{/* FILTER BAR */}
+<div className="grid grid-cols-7 gap-3 mb-4">
+  <input
+    type="month"
+    value={month}
+    onChange={e => setMonth(e.target.value)}
+    className="border px-2 py-1"
+  />
 
-          value={employee || ""}<select value={zone} onChange={e => setZone(e.target.value)} className="border px-2 py-1">
-          <option value="">All Zones</option>
-          {zones.map(z => <option key={z._id} value={z.name}>{z.name}</option>)}
-        </select>
+  <input
+    type="date"
+    value={fromDate}
+    onChange={e => setFromDate(e.target.value)}
+    className="border px-2 py-1"
+  />
 
-        <select value={division} onChange={e => setDivision(e.target.value)} className="border px-2 py-1">
-          <option value="">All Divisions</option>
-          {divisions.map(d => <option key={d._id} value={d.name}>{d.name}</option>)}
-        </select>
+  <input
+    type="date"
+    value={toDate}
+    onChange={e => setToDate(e.target.value)}
+    className="border px-2 py-1"
+  />
 
-        <select value={supervisor} onChange={e => setSupervisor(e.target.value)} className="border px-2 py-1">
-          <option value="">All Supervisors</option>
-          {supervisors.map(s => <option key={s._id} value={s.code}>{s.name}</option>)}
-        </select>
+  <select
+    value={zone}
+    onChange={e => setZone(e.target.value)}
+    className="border px-2 py-1"
+  >
+    <option value="">All Zones</option>
+    {zones.map(z => (
+      <option key={z._id} value={z.name}>{z.name}</option>
+    ))}
+  </select>
 
-        <select
-  value={employee || ""}
-  onChange={e => setEmployee(e.target.value)}
-  className="border px-2 py-1"
->
-  <option value="">All Employees</option>
-  {employees.map(emp => (
-    <option key={emp._id} value={emp.code}>
-      {emp.name} ({emp.code})
-    </option>
-  ))}
-</select>
+  <select
+    value={division}
+    onChange={e => setDivision(e.target.value)}
+    className="border px-2 py-1"
+  >
+    <option value="">All Divisions</option>
+    {divisions.map(d => (
+      <option key={d._id} value={d.name}>{d.name}</option>
+    ))}
+  </select>
+
+  <select
+    value={supervisor}
+    onChange={e => setSupervisor(e.target.value)}
+    className="border px-2 py-1"
+  >
+    <option value="">All Supervisors</option>
+    {supervisors.map(s => (
+      <option key={s._id} value={s.code}>{s.name}</option>
+    ))}
+  </select>
+
+  <select
+    value={employee}
+    onChange={e => setEmployee(e.target.value)}
+    className="border px-2 py-1"
+  >
+    <option value="">All Employees</option>
+    {employees.map(emp => (
+      <option key={emp._id} value={emp.code}>
+        {emp.name} ({emp.code})
+      </option>
+    ))}
+  </select>
+</div>
 
 
-      <div className="flex gap-3 mb-4">
-        <button onClick={loadCalendar} className="border px-4 py-1 bg-gray-100">
-          Apply
-        </button>
-        <button onClick={exportCSV} className="border px-4 py-1 bg-green-100">
-          Export CSV
-        </button>
-      </div>
+  
 
-      {loading && <div className="mb-2">Refreshing…</div>}
+{/* ACTION BUTTONS */}
+<div className="flex gap-3 mb-4">
+  <button
+    onClick={loadCalendar}
+    className="border px-4 py-1 bg-gray-100 rounded"
+  >
+    Apply
+  </button>
+
+  <button
+    onClick={exportCSV}
+    className="border px-4 py-1 bg-green-100 rounded"
+  >
+    Export CSV
+  </button>
+</div>
+
+
 
       {/* CALENDAR TABLE (UNCHANGED LOGIC) */}
       <table className="border-collapse border w-full text-sm">

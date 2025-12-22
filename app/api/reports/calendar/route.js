@@ -91,7 +91,8 @@ if (role === "ZONE_ADMIN") {
 }
 
 if (division) empQuery.division = division;
-if (supervisor) empQuery.supervisor = supervisor;
+if (supervisor) empQuery.supervisorCode = supervisor;
+
 if (employeeCode) empQuery.code = employeeCode;
 
 const employees = await Employee.find(empQuery).lean();

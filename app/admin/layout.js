@@ -39,6 +39,14 @@ export default function AdminLayout({ children }) {
   <NavItem href="/admin/dashboard" label="Dashboard" collapsed={collapsed} />
   <NavItem href="/admin/zones" label="Zones" collapsed={collapsed} />
 
+  {/* ✅ Zone Admin List */}
+<NavItem
+  href="/admin/zone-admin"
+  label="Zone Admins"
+  collapsed={collapsed}
+/>
+ 
+
   {/* ✅ Create Zone Admin */}
   <NavItem
     href="/admin/zone-admin/create"
