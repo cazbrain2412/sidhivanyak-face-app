@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function ViewZoneAdmin() {
+function ViewZoneAdminInner() {
+
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
   const [data, setData] = useState(null);
@@ -32,6 +33,14 @@ export default function ViewZoneAdmin() {
         {data.assignedZones.map(z => z.name).join(", ")}
       </p>
     </div>
+    );
+}
+
+export default function ViewZoneAdmin() {
+  return (
+    <Suspense fallback={<div className="p-6">Loading...</div>}>
+      <ViewZoneAdminInner />
+    </Suspense>
   );
 }
 
