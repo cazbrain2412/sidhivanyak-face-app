@@ -10,42 +10,67 @@ export default function AttendanceReportsCalendar() {
   const [zone, setZone] = useState("");
   const [division, setDivision] = useState("");
   const [supervisor, setSupervisor] = useState("");
+  const [employee, setEmployee] = useState("");
 
   const [zones, setZones] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
+  const [employees, setEmployees] = useState([]);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // ---------------- LOAD FILTER DATA ----------------
+  // ---------------- LOAD FILTER MASTER DATA ----------------
   useEffect(() => {
     fetch("/api/zones/list").then(r => r.json()).then(j => setZones(j.zones || []));
     fetch("/api/divisions/list").then(r => r.json()).then(j => setDivisions(j.divisions || []));
     fetch("/api/supervisors/list").then(r => r.json()).then(j => setSupervisors(j.supervisors || []));
   }, []);
 
-  // ---------------- LOAD CALENDAR ----------------
-  async function loadReport() {
+  // ---------------- LOAD EMPLOYEES BY SUPERVISOR ----------------
+  useEffect(() => {
+    if (!supervisor) {
+      setEmployees([]);
+      setEmployee("");
+      return;
+    }
+
+    fetch(`/api/employees/by-supervisor?supervisor=${supervisor}`)
+      .then(r => r.json())
+      .then(j => setEmployees(j.employees || []));
+  }, [supervisor]);
+
+  // ---------------- LOAD CALENDAR REPORT ----------------
+  async function loadCalendar() {
+    if (!month) return;
+
     setLoading(true);
 
-    const params = new URLSearchParams({
-      month,
-      zone,
-      division,
-      supervisor,
-      fromDate,
-      toDate,
-    });
+    try {
+      const params = new URLSearchParams();
+      params.set("month", month);
 
-    const res = await fetch(`/api/reports/calendar?${params.toString()}`);
-    const json = await res.json();
-    setData(json);
-    setLoading(false);
+      if (fromDate) params.set("fromDate", fromDate);
+      if (toDate) params.set("toDate", toDate);
+      if (zone) params.set("zone", zone);
+      if (division) params.set("division", division);
+      if (supervisor) params.set("supervisor", supervisor);
+      if (employee) params.set("employee", employee);
+
+      const res = await fetch(`/api/reports/calendar?${params.toString()}`);
+      const json = await res.json();
+      setData(json);
+    } catch (err) {
+      console.error("CALENDAR REPORT ERROR:", err);
+      alert("Failed to load report");
+    } finally {
+      setLoading(false); // ✅ FIXES LOADING ISSUE
+    }
   }
 
+  // auto load on month change
   useEffect(() => {
-    loadReport();
+    loadCalendar();
   }, [month]);
 
   // ---------------- EXPORT CSV ----------------
@@ -55,6 +80,7 @@ export default function AttendanceReportsCalendar() {
       zone,
       division,
       supervisor,
+      employee,
       fromDate,
       toDate,
     });
@@ -68,7 +94,7 @@ export default function AttendanceReportsCalendar() {
       <h1 className="text-xl font-bold mb-4">Attendance Calendar Report</h1>
 
       {/* FILTER BAR */}
-      <div className="grid grid-cols-6 gap-3 mb-4">
+      <div className="grid grid-cols-7 gap-3 mb-4">
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="border px-2 py-1" />
         <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="border px-2 py-1" />
         <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="border px-2 py-1" />
@@ -87,14 +113,29 @@ export default function AttendanceReportsCalendar() {
           <option value="">All Supervisors</option>
           {supervisors.map(s => <option key={s._id} value={s.code}>{s.name}</option>)}
         </select>
+
+        <select value={employee} onChange={e => setEmployee(e.target.value)} className="border px-2 py-1">
+          <option value="">All Employees</option>
+          {employees.map(emp => (
+            <option key={emp._id} value={emp.code}>
+              {emp.name} ({emp.code})
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-3 mb-4">
-        <button onClick={loadReport} className="border px-4 py-1 bg-gray-100">Apply</button>
-        <button onClick={exportCSV} className="border px-4 py-1 bg-green-100">Export CSV</button>
+        <button onClick={loadCalendar} className="border px-4 py-1 bg-gray-100">
+          Apply
+        </button>
+        <button onClick={exportCSV} className="border px-4 py-1 bg-green-100">
+          Export CSV
+        </button>
       </div>
 
-      {/* CALENDAR TABLE */}
+      {loading && <div className="mb-2">Refreshing…</div>}
+
+      {/* CALENDAR TABLE (UNCHANGED LOGIC) */}
       <table className="border-collapse border w-full text-sm">
         <thead>
           <tr className="bg-gray-100">
@@ -143,8 +184,6 @@ export default function AttendanceReportsCalendar() {
           ))}
         </tbody>
       </table>
-
-      {loading && <div className="mt-2">Refreshing…</div>}
     </div>
   );
 }
