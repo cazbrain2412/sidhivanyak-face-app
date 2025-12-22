@@ -29,16 +29,33 @@ export default function AttendanceReportsCalendar() {
 
   // ---------------- LOAD EMPLOYEES BY SUPERVISOR ----------------
   useEffect(() => {
-    if (!supervisor) {
-      setEmployees([]);
-      setEmployee("");
-      return;
-    }
+  if (!supervisor) {
+    setEmployees([]);
+    setEmployee("");
+    return;
+  }
 
-    fetch(`/api/employees/by-supervisor?supervisor=${supervisor}`)
-      .then(r => r.json())
-      .then(j => setEmployees(j.employees || []));
-  }, [supervisor]);
+  const token = localStorage.getItem("token"); // SAME token used across app
+
+  fetch(`/api/employees/by-supervisor?code=${supervisor}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+    .then(res => res.json())
+    .then(j => {
+      if (j.success && Array.isArray(j.employees)) {
+        setEmployees(j.employees);
+      } else {
+        setEmployees([]);
+      }
+    })
+    .catch(err => {
+      console.error("EMPLOYEE LOAD ERROR:", err);
+      setEmployees([]);
+    });
+}, [supervisor]);
+
 
   // ---------------- LOAD CALENDAR REPORT ----------------
   async function loadCalendar() {
