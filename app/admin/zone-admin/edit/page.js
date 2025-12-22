@@ -1,9 +1,13 @@
 "use client";
+export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function EditZoneAdmin() {
+
+function EditZoneAdminInner() {
+
+
   const router = useRouter();
   const params = useSearchParams();
   const id = params.get("id");
@@ -135,6 +139,15 @@ export default function EditZoneAdmin() {
         </div>
       </form>
     </div>
+    );
+}
+
+export default function EditZoneAdmin() {
+  return (
+    <Suspense fallback={<div className="p-6">Loading...</div>}>
+      <EditZoneAdminInner />
+    </Suspense>
   );
 }
+
 
