@@ -16,6 +16,23 @@ function toIST(date) {
 }
 /* ------------------------------------------------------ */
 
+async function reverseGeocode(lat, lng) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "AttendanceSystem/1.0"
+      }
+    });
+    const json = await res.json();
+    return json?.display_name || "";
+  } catch (e) {
+    return "";
+  }
+}
+
+
+
 function buildDayRange(dateStr) {
   const [yyyy, mm, dd] = dateStr.split("-").map(Number);
   const start = new Date(yyyy, mm - 1, dd, 0, 0, 0, 0);
@@ -85,15 +102,37 @@ const docs = await Attendance.find(q)
         .limit(n)
         .lean();
 
-      const normalized = docs.map(d => ({
-        ...d,
-        timestamp: toIST(
-          d.timestamp ||
-          d.createdAt ||
-          d.punchIn ||
-          (d.date ? new Date(d.date + "T00:00:00Z") : null)
-        ),
-      }));
+      const normalized = await Promise.all(
+  docs.map(async (d) => {
+    let locationName = "";
+
+    if (d.lat && d.lng) {
+      locationName = await reverseGeocode(d.lat, d.lng);
+    } else if (d.location?.lat && d.location?.lng) {
+      locationName = await reverseGeocode(d.location.lat, d.location.lng);
+    }
+
+    return {
+      ...d,
+      locationName,
+      timestamp: toIST(
+        d.timestamp ||
+        d.createdAt ||
+        d.punchIn ||
+        (d.date ? new Date(d.date + "T00:00:00Z") : null)
+      ),
+    };
+  })
+);
+
+        
+        
+          
+          
+          
+          
+        
+      
 
       return NextResponse.json({ success: true, attendance: normalized });
     }

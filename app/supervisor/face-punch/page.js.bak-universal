@@ -185,21 +185,12 @@ function SupervisorFacePunchInner() {
 
       setStatus(`sending ${action.toUpperCase()} to server…`);
 
-// 🔹 Decide API dynamically
-const apiUrl = selfMode
-  ? "/api/supervisor/attendance/mark"   // Supervisor self attendance
-  : "/api/attendance/mark";             // Employee attendance (existing)
-
-// 🔹 Send punch data
-const res = await fetch(apiUrl, {
+const res = await fetch("/api/attendance/mark", {
   method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("supervisorToken")}`,
-  },
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     descriptor,
-    action, // "in" | "out"
+    action, // "in" or "out"
     location: location
       ? {
           lat: location.lat,
@@ -210,7 +201,6 @@ const res = await fetch(apiUrl, {
       : {},
   }),
 });
-
 
 
       

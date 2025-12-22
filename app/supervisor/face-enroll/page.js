@@ -2,6 +2,8 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import * as faceapi from "face-api.js";
+
 
 function SupervisorFaceEnrollInner() {
 
@@ -13,6 +15,7 @@ function SupervisorFaceEnrollInner() {
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  
 
   const [status, setStatus] = useState("initialising camera…");
   const [modelsLoaded, setModelsLoaded] = useState(false);
@@ -20,54 +23,74 @@ function SupervisorFaceEnrollInner() {
   const [busy, setBusy] = useState(false);
 
   // ---- camera + models ----
-  useEffect(() => {
-    let cancelled = false;
+useEffect(() => {
+  let cancelled = false;
 
-    async function init() {
-      try {
-        setStatus("requesting camera…");
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        if (cancelled) return;
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+  async function init() {
+    try {
+      setStatus("requesting camera…");
 
-        setStatus("loading face models…");
-        const faceapi = await import("face-api.js");
-        try {
-          if (faceapi?.tf?.setBackend) {
-            await faceapi.tf.setBackend("webgl");
-            await faceapi.tf.ready();
-          }
-        } catch (e) {
-          console.warn("tf backend set failed", e);
-        }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" }, // front camera by default
+      });
 
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri("/models/"),
-          faceapi.nets.faceLandmark68Net.loadFromUri("/models/"),
-          faceapi.nets.faceRecognitionNet.loadFromUri("/models/"),
-        ]);
+      if (cancelled) return;
 
-        if (cancelled) return;
-        setModelsLoaded(true);
-        setStatus("camera ready — capture 3 samples");
-      } catch (err) {
-        console.error(err);
-        setStatus("camera error: " + (err.message || String(err)));
-      }
-    }
-
-    init();
-
-    return () => {
-      cancelled = true;
+      // stop old stream if exists
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-    };
-  }, []);
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+
+      setStatus("loading face models…");
+
+      const faceapi = await import("face-api.js");
+
+      // optional: set TF backend
+      try {
+        if (faceapi?.tf?.setBackend) {
+          await faceapi.tf.setBackend("webgl");
+          await faceapi.tf.ready();
+        }
+      } catch (e) {
+        console.warn("tf backend set failed", e);
+      }
+
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
+        faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
+        faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+      ]);
+
+      if (cancelled) return;
+
+      setModelsLoaded(true);
+      setStatus("camera ready — capture 3 samples");
+    } catch (err) {
+      console.error(err);
+      setStatus("camera error: " + (err.message || String(err)));
+    }
+  }
+
+  init();
+
+  return () => {
+    cancelled = true;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+    }
+  };
+}, []);
+
+       
+
+       
+        
 
   async function captureOneSample() {
     if (!videoRef.current) {
@@ -118,63 +141,71 @@ function SupervisorFaceEnrollInner() {
     return out;
   }
 
+  
   async function handleCaptureClick() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      if (!empCodeParam && !selfMode) {
-        setStatus("No employee code supplied in URL.");
-        setBusy(false);
-        return;
-      }
+  if (busy) return;
+  setBusy(true);
 
-      const s = await captureOneSample();
-      if (!s) {
-        setBusy(false);
-        return;
-      }
-
-      const nextSamples = [...samples, s];
-      setSamples(nextSamples);
-
-      if (nextSamples.length < 3) {
-        setStatus(
-          `sample ${nextSamples.length}/3 captured — change angle slightly and capture again`
-        );
-        setBusy(false);
-        return;
-      }
-
-      // We have 3 samples → send to server
-      setStatus("3 samples captured — saving to server…");
-      const descriptor = averageDescriptors(nextSamples);
-      const codeToSave = empCodeParam || "(self)";
-
-      const body = {
-        code: empCodeParam, // server already knows mapping from supervisor token for self
-        descriptor,
-      };
-
-      const res = await fetch("/api/employees/update-face", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setStatus("save failed: " + (data.error || data.message || "unknown"));
-        return;
-      }
-
-      setStatus(`face enrolled for ${codeToSave}. You can now use Punch In/Out.`);
-    } catch (err) {
-      console.error(err);
-      setStatus("error: " + (err.message || String(err)));
-    } finally {
+  try {
+    // ✅ ALLOW SELF ENROLL
+    if (!empCodeParam && !selfMode) {
+      setStatus("No employee code supplied in URL.");
       setBusy(false);
+      return;
     }
+
+    if (!modelsLoaded) {
+      setStatus("Face models not loaded yet");
+      setBusy(false);
+      return;
+    }
+
+    if (!videoRef.current) {
+      setStatus("Camera not ready");
+      setBusy(false);
+      return;
+    }
+
+    const faceapi = await import("face-api.js");
+
+    const detection = await faceapi
+      .detectSingleFace(
+        videoRef.current,
+        new faceapi.TinyFaceDetectorOptions()
+      )
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) {
+      setStatus("No face detected — look at camera");
+      setBusy(false);
+      return;
+    }
+
+    const descriptor = Array.from(detection.descriptor);
+
+    setSamples((prev) => {
+      const next = [...prev, descriptor];
+      setStatus(`Sample ${next.length} captured`);
+      return next;
+    });
+
+  } catch (err) {
+    console.error(err);
+    setStatus("Capture error: " + (err.message || String(err)));
+  } finally {
+    setBusy(false);
   }
+}
+
+
+
+      
+
+   
+         
+     
+     
 
   const displayEmpLabel = empCodeParam
     ? empCodeParam

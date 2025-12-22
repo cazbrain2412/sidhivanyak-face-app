@@ -387,7 +387,7 @@ export default function AdminAttendanceCalendar() {
       if (formStatus) payload.status = formStatus;
       if (formNotes) payload.notes = formNotes;
 
-      const res = await fetch("/api/attendance/admin-mark", {
+      const res = await fetch("/api/attendance/mark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

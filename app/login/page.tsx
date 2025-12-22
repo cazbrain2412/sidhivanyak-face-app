@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -7,29 +8,41 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  async function handleLogin(e: any) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setError("");
 
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-    const j = await res.json();
-    setLoading(false);
+      const data = await res.json();
 
-    if (!res.ok) {
-      alert(j.error || "Login failed");
-      return;
-    }
+      if (!res.ok || !data.success) {
+        setError(data.message || "Invalid login");
+        setLoading(false);
+        return;
+      }
 
-    if (j.role === "SUPER_ADMIN") {
-      router.push("/admin/dashboard");
-    } else {
-      router.push("/zone-admin/dashboard");
+      // ✅ SINGLE, CLEAN REDIRECT
+      if (data.role === "SUPER_ADMIN") {
+        router.replace("/admin/dashboard");
+      } else if (data.role === "ZONE_ADMIN") {
+        router.replace("/zone-admin/dashboard");
+      } else {
+        setError("Unknown role");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Login failed");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -40,6 +53,10 @@ export default function LoginPage() {
         className="bg-white p-6 rounded shadow w-80"
       >
         <h1 className="text-xl font-semibold mb-4">Login</h1>
+
+        {error && (
+          <div className="text-red-600 text-sm mb-2">{error}</div>
+        )}
 
         <input
           className="border w-full p-2 mb-3"

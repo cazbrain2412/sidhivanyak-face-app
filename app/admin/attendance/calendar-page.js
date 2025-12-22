@@ -125,7 +125,8 @@ function formatLocationShort(a) {
     try {
       const latStr = Number(lat).toFixed(4);
       const lngStr = Number(lng).toFixed(4);
-      return `${latStr}, ${lngStr}`;
+      return "On-site";
+
     } catch {
       return "";
     }
@@ -137,15 +138,21 @@ function formatLocationShort(a) {
  * Key for map: employeeCode + YYYY-MM-DD
  */
 function cellKeyFor(empCode, day, yearNum, monthNum) {
-  const d = new Date(yearNum, monthNum - 1, day);
-  return `${empCode}|${d.toISOString().slice(0, 10)}`;
+  const yyyy = yearNum;
+  const mm = String(monthNum).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${empCode}|${yyyy}-${mm}-${dd}`;
 }
+
 
 export default function AdminAttendanceCalendar() {
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, "0");
   const [month, setMonth] = useState(`${yyyy}-${mm}`); // YYYY-MM
+  const [dateMode, setDateMode] = useState("month"); // month | range
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]); // attendance docs for month
@@ -232,7 +239,15 @@ export default function AdminAttendanceCalendar() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (month) params.set("month", month);
+      if (dateMode === "month" && month) {
+  params.set("month", month);
+}
+
+if (dateMode === "range" && fromDate && toDate) {
+  params.set("from", fromDate);
+  params.set("to", toDate);
+}
+
       const res = await fetch("/api/attendance/list?" + params.toString());
       const j = await res.json();
       setAttendance(Array.isArray(j.attendance) ? j.attendance : []);
@@ -273,6 +288,18 @@ export default function AdminAttendanceCalendar() {
       return false;
     return true;
   });
+
+  const globalTotals = filteredEmployees.reduce(
+  (acc, emp) => {
+    const s = computeEmployeeSummary(emp);
+    acc.present += s.present;
+    acc.absent += s.absent;
+    acc.employees += 1;
+    return acc;
+  },
+  { present: 0, absent: 0, employees: 0 }
+);
+
 
   // calendar geometry
   const [yy, mmStr] = month.split("-");
@@ -387,7 +414,7 @@ export default function AdminAttendanceCalendar() {
       if (formStatus) payload.status = formStatus;
       if (formNotes) payload.notes = formNotes;
 
-      const res = await fetch("/api/attendance/admin-mark", {
+      const res = await fetch("/api/attendance/mark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -478,15 +505,36 @@ export default function AdminAttendanceCalendar() {
           </div>
         </div>
 
-        <div className="mb-3">
-          <label className="text-sm">Month</label>
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="border px-2 py-1 rounded w-full"
-          />
-        </div>
+        <div className="mb-2">
+  <label className="text-sm">Date Mode</label>
+  <select
+    value={dateMode}
+    onChange={(e) => setDateMode(e.target.value)}
+    className="border px-2 py-1 rounded w-full"
+  >
+    <option value="month">Month</option>
+    <option value="range">Date Range</option>
+  </select>
+</div>
+
+{dateMode === "range" && (
+  <div className="flex gap-2 mb-3">
+    <input
+      type="date"
+      value={fromDate}
+      onChange={(e) => setFromDate(e.target.value)}
+      className="border px-2 py-1 rounded w-1/2"
+    />
+    <input
+      type="date"
+      value={toDate}
+      onChange={(e) => setToDate(e.target.value)}
+      className="border px-2 py-1 rounded w-1/2"
+    />
+  </div>
+)}
+          
+        
 
         <div className="flex gap-2 mb-3">
           <select

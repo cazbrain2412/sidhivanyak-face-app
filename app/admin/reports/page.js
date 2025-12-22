@@ -2,63 +2,149 @@
 
 import { useEffect, useState } from "react";
 
-export default function AdminReports() {
-  const [attendance, setAttendance] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function AttendanceReportsCalendar() {
+  const [month, setMonth] = useState("2025-12");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
+  const [zone, setZone] = useState("");
+  const [division, setDivision] = useState("");
+  const [supervisor, setSupervisor] = useState("");
+
+  const [zones, setZones] = useState([]);
+  const [divisions, setDivisions] = useState([]);
+  const [supervisors, setSupervisors] = useState([]);
+
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // ---------------- LOAD FILTER DATA ----------------
   useEffect(() => {
-    loadReports();
+    fetch("/api/zones/list").then(r => r.json()).then(j => setZones(j.zones || []));
+    fetch("/api/divisions/list").then(r => r.json()).then(j => setDivisions(j.divisions || []));
+    fetch("/api/supervisors/list").then(r => r.json()).then(j => setSupervisors(j.supervisors || []));
   }, []);
 
-  async function loadReports() {
+  // ---------------- LOAD CALENDAR ----------------
+  async function loadReport() {
     setLoading(true);
-    try {
-      const res = await fetch("/api/attendance/list?month=" + new Date().toISOString().slice(0, 7));
-      const json = await res.json();
-      setAttendance(json.attendance || []);
-    } catch (err) {
-      console.error("Report load error", err);
-    } finally {
-      setLoading(false);
-    }
+
+    const params = new URLSearchParams({
+      month,
+      zone,
+      division,
+      supervisor,
+      fromDate,
+      toDate,
+    });
+
+    const res = await fetch(`/api/reports/calendar?${params.toString()}`);
+    const json = await res.json();
+    setData(json);
+    setLoading(false);
   }
 
+  useEffect(() => {
+    loadReport();
+  }, [month]);
+
+  // ---------------- EXPORT CSV ----------------
+  function exportCSV() {
+    const params = new URLSearchParams({
+      month,
+      zone,
+      division,
+      supervisor,
+      fromDate,
+      toDate,
+    });
+    window.location.href = `/api/reports/export?${params.toString()}`;
+  }
+
+  if (!data) return <div className="p-4">Loading…</div>;
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-4">Attendance Reports</h1>
+    <div className="p-4 overflow-x-auto">
+      <h1 className="text-xl font-bold mb-4">Attendance Calendar Report</h1>
 
-      {loading && <div>Loading reports...</div>}
+      {/* FILTER BAR */}
+      <div className="grid grid-cols-6 gap-3 mb-4">
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="border px-2 py-1" />
+        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="border px-2 py-1" />
+        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="border px-2 py-1" />
 
-      {!loading && attendance.length === 0 && (
-        <div className="text-gray-500">No attendance records found</div>
-      )}
+        <select value={zone} onChange={e => setZone(e.target.value)} className="border px-2 py-1">
+          <option value="">All Zones</option>
+          {zones.map(z => <option key={z._id} value={z.name}>{z.name}</option>)}
+        </select>
 
-      {!loading && attendance.length > 0 && (
-        <div className="overflow-auto border rounded">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-3 py-2 text-left">Employee</th>
-                <th className="px-3 py-2 text-left">Date</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Zone</th>
-                <th className="px-3 py-2 text-left">Division</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendance.map((a, i) => (
-                <tr key={i} className="border-t">
-                  <td className="px-3 py-2">{a.employeeName || a.employeeCode}</td>
-                  <td className="px-3 py-2">{a.date}</td>
-                  <td className="px-3 py-2 font-semibold">{a.status}</td>
-                  <td className="px-3 py-2">{a.zone || "-"}</td>
-                  <td className="px-3 py-2">{a.division || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        <select value={division} onChange={e => setDivision(e.target.value)} className="border px-2 py-1">
+          <option value="">All Divisions</option>
+          {divisions.map(d => <option key={d._id} value={d.name}>{d.name}</option>)}
+        </select>
+
+        <select value={supervisor} onChange={e => setSupervisor(e.target.value)} className="border px-2 py-1">
+          <option value="">All Supervisors</option>
+          {supervisors.map(s => <option key={s._id} value={s.code}>{s.name}</option>)}
+        </select>
+      </div>
+
+      <div className="flex gap-3 mb-4">
+        <button onClick={loadReport} className="border px-4 py-1 bg-gray-100">Apply</button>
+        <button onClick={exportCSV} className="border px-4 py-1 bg-green-100">Export CSV</button>
+      </div>
+
+      {/* CALENDAR TABLE */}
+      <table className="border-collapse border w-full text-sm">
+        <thead>
+          <tr className="bg-gray-100">
+            <th className="border p-2 sticky left-0 bg-gray-100 z-10">Employee</th>
+            {data.days.map(d => (
+              <th key={d.date} className="border p-1 text-center min-w-[48px]">
+                <div className="text-xs">{d.weekday}</div>
+                <div className="font-semibold">{d.day}</div>
+              </th>
+            ))}
+            <th className="border p-2">P</th>
+            <th className="border p-2">A</th>
+            <th className="border p-2">H</th>
+            <th className="border p-2">L</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {data.rows.map(row => (
+            <tr key={row.employee.code}>
+              <td className="border p-2 sticky left-0 bg-white z-10">
+                <div className="font-medium">{row.employee.name}</div>
+                <div className="text-xs text-gray-500">{row.employee.code}</div>
+              </td>
+
+              {data.days.map(d => {
+                const s = row.attendance[d.date];
+                const bg =
+                  s === "P" ? "bg-green-200"
+                  : s === "H" ? "bg-yellow-200"
+                  : s === "L" ? "bg-blue-200"
+                  : "bg-red-100";
+
+                return (
+                  <td key={d.date} className={`border text-center ${bg}`}>
+                    {s}
+                  </td>
+                );
+              })}
+
+              <td className="border text-center font-semibold">{row.summary.present}</td>
+              <td className="border text-center font-semibold">{row.summary.absent}</td>
+              <td className="border text-center font-semibold">{row.summary.half}</td>
+              <td className="border text-center font-semibold">{row.summary.leave}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {loading && <div className="mt-2">Refreshing…</div>}
     </div>
   );
 }

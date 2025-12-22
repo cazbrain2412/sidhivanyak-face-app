@@ -8,81 +8,103 @@ function SupervisorFacePunchInner() {
   const router = useRouter();
 
   // URL params
-  const empCodeParam = searchParams.get("emp") || "";
-  const selfMode = searchParams.get("self") === "1";
-
+  const empCodeParam = null;
+  const selfMode = false;
+  
   const streamRef = useRef(null);
   const videoRef = useRef(null);
   const [cameraFacing, setCameraFacing] = useState("user"); // "user" | "environment"
   const [status, setStatus] = useState("initialising camera...");
   const [threshold, setThreshold] = useState(0.65);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-
+  const [modelsLoaded, setModelsLoaded] = useState(false); 
   const [matchedEmp, setMatchedEmp] = useState(null);
   const [distance, setDistance] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const [lastActionInfo, setLastActionInfo] = useState("");
+ const [lastResult, setLastResult] = useState(null);
+/*
+lastResult = {
+  name,
+  code,
+  action,   // "IN" | "OUT"
+  success,  // true | false
+  message
+}
+*/
 
   // NEW: location state
   const [locationStatus, setLocationStatus] = useState("");
   const [lastLocation, setLastLocation] = useState(null); // { lat, lng, accuracy }
 
-  // ---------- CAMERA + MODELS ----------
+  // ---------- CAMERA + MODELS (UNIVERSAL, SAFE) ----------
+useEffect(() => {
+  let cancelled = false;
 
-  useEffect(() => {
-    let cancelled = false;
+  async function init() {
+    try {
+      /* ================= CAMERA ================= */
+      setStatus("requesting camera...");
 
-    async function init() {
-      try {
-        setStatus("requesting camera...");
-        const stream = await navigator.mediaDevices.getUserMedia({
-  video: { facingMode: cameraFacing },
-});
-
-        if (cancelled) return;
-
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-
-        setStatus("loading face models...");
-        const faceapi = await import("face-api.js");
-
-        try {
-          if (faceapi?.tf?.setBackend) {
-            await faceapi.tf.setBackend("webgl");
-            await faceapi.tf.ready();
-          }
-        } catch (e) {
-          console.warn("tf backend set failed", e);
-        }
-
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri("/models/"),
-          faceapi.nets.faceLandmark68Net.loadFromUri("/models/"),
-          faceapi.nets.faceRecognitionNet.loadFromUri("/models/"),
-        ]);
-
-        if (cancelled) return;
-        setModelsLoaded(true);
-        setStatus("camera ready");
-      } catch (err) {
-        console.error(err);
-        setStatus("camera error: " + (err.message || String(err)));
-      }
-    }
-
-    init();
-
-    return () => {
-      cancelled = true;
+      // stop previous stream (important for switch camera)
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-    };
-  }, []);
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: cameraFacing }, // "user" | "environment"
+      });
+
+      if (cancelled) return;
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+
+      /* ================= FACE MODELS ================= */
+      setStatus("loading face models...");
+
+      const faceapi = await import("face-api.js");
+
+      try {
+        if (faceapi?.tf?.setBackend) {
+          await faceapi.tf.setBackend("webgl");
+          await faceapi.tf.ready();
+        }
+      } catch (e) {
+        console.warn("TF backend failed, continuing", e);
+      }
+
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
+        faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
+        faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+      ]);
+
+      if (cancelled) return;
+
+      setModelsLoaded(true);
+      setStatus("camera ready");
+    } catch (err) {
+      console.error(err);
+      setStatus("camera error: " + (err.message || String(err)));
+    }
+  }
+
+  init();
+
+  return () => {
+    cancelled = true;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+    }
+  };
+}, [cameraFacing]); // ✅ switch camera works here
+
+
+       
+   
 
   // ---------- LOCATION (ONE-SHOT, PER PUNCH) ----------
 
@@ -185,21 +207,12 @@ function SupervisorFacePunchInner() {
 
       setStatus(`sending ${action.toUpperCase()} to server…`);
 
-// 🔹 Decide API dynamically
-const apiUrl = selfMode
-  ? "/api/supervisor/attendance/mark"   // Supervisor self attendance
-  : "/api/attendance/mark";             // Employee attendance (existing)
-
-// 🔹 Send punch data
-const res = await fetch(apiUrl, {
+const res = await fetch("/api/attendance/mark", {
   method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("supervisorToken")}`,
-  },
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     descriptor,
-    action, // "in" | "out"
+    action, // "in" or "out"
     location: location
       ? {
           lat: location.lat,
@@ -212,74 +225,120 @@ const res = await fetch(apiUrl, {
 });
 
 
-
       
 
       const data = await res.json();
 
-      if (!data.success) {
-        setStatus("server: " + (data.message || data.error || "failed"));
-        if (data.employee) {
-          setMatchedEmp(data.employee);
-          setDistance(data.bestDist ?? data.dist ?? null);
-        }
-        setBusy(false);
-        return;
-      }
+if (!data.success) {
+  setStatus("server: " + (data.message || data.error || "failed"));
 
-      // matched employee
-      if (data.employee) {
-        setMatchedEmp(data.employee);
-        setDistance(data.bestDist ?? data.dist ?? null);
-      }
-
-      // optional strict check: if emp=E300 in URL but match is different, warn
-      if (empCodeParam && data?.employee?.code && data.employee.code !== empCodeParam) {
-        setStatus(
-          `Face belongs to ${data.employee.code}, not ${empCodeParam} — attendance not counted.`
-        );
-        setBusy(false);
-        return;
-      }
-
-      const rec = data.record || {};
-      const inToday = data.inToday || !!rec.punchIn;
-      const outToday = data.outToday || !!rec.punchOut;
-
-      const ts =
-        rec.punchIn || rec.punchOut || rec.createdAt
-          ? new Date(rec.punchOut || rec.punchIn || rec.createdAt).toLocaleString()
-          : new Date().toLocaleString();
-
-      const line =
-        action === "in"
-          ? `Punch IN done at ${ts}`
-          : `Punch OUT done at ${ts}`;
-
-      setLastActionInfo(line);
-      setStatus(
-        `OK: ${line} • present=${inToday && outToday ? "YES" : "pending"}`
-      );
-    } catch (err) {
-      console.error(err);
-      setStatus("error: " + (err.message || String(err)));
-    } finally {
-      setBusy(false);
-    }
+  if (data.employee) {
+    setMatchedEmp(data.employee);
+    setDistance(data.bestDist ?? data.dist ?? null);
   }
 
-  function handleReload() {
-    // simple reload of page & state
-    router.refresh();
+  // ✅ NEW: store failed result for BIG UI display
+  setLastResult({
+    name: data.employee?.name || "",
+    code: data.employee?.code || "",
+    action: action === "in" ? "PUNCH IN" : "PUNCH OUT",
+    success: false,
+    message: data.message || data.error || "Attendance failed",
+  });
+
+  setBusy(false);
+  return;
+}
+
+// matched employee
+if (data.employee) {
+  setMatchedEmp(data.employee);
+  setDistance(data.bestDist ?? data.dist ?? null);
+
+  // optional strict check
+  if (empCodeParam && data?.employee?.code && data.employee.code !== empCodeParam) {
+    setStatus(
+      `Face belongs to ${data.employee.code}, not ${empCodeParam} — attendance not confirmed`
+    );
+
+    // ✅ NEW: mismatch shown clearly
+    setLastResult({
+      name: data.employee?.name || "",
+      code: data.employee?.code || "",
+      action: action === "in" ? "PUNCH IN" : "PUNCH OUT",
+      success: false,
+      message: "Face matched, but employee mismatch",
+    });
+
+    setBusy(false);
+    return;
   }
 
-  const displayEmpLabel = matchedEmp
-    ? `${matchedEmp.name || matchedEmp.code} — ${matchedEmp.code}`
-    : empCodeParam
-    ? empCodeParam
-    : selfMode
-    ? "(self)"
-    : "—";
+  const rec = data.record || {};
+  const inToday = data.inToday || !!rec.punchIn;
+  const outToday = data.outToday || !!rec.punchOut;
+
+  const ts =
+    rec.punchIn || rec.punchOut || rec.createdAt
+      ? new Date(rec.punchOut || rec.punchIn || rec.createdAt).toLocaleString()
+      : new Date().toLocaleString();
+
+  const line =
+    action === "in"
+      ? `Punch IN done at ${ts}`
+      : `Punch OUT done at ${ts}`;
+
+  setLastActionInfo(line);
+  setStatus(
+    `OK: ${line} • present=${inToday && outToday ? "YES" : "pending"}`
+  );
+
+  // ✅ NEW: SUCCESS RESULT FOR BIG BOLD UI
+  setLastResult({
+    name: data.employee?.name || "",
+    code: data.employee?.code || "",
+    action: action === "in" ? "PUNCH IN" : "PUNCH OUT",
+    success: true,
+    message: line,
+  });
+}
+
+} catch (err) {
+  console.error(err);
+  setStatus("error: " + (err.message || String(err)));
+
+  // ✅ NEW: error display
+  setLastResult({
+    name: "",
+    code: "",
+    action: action === "in" ? "PUNCH IN" : "PUNCH OUT",
+    success: false,
+    message: err.message || "Unexpected error",
+  });
+} finally {
+  setBusy(false);
+}
+}
+
+function handleReload() {
+  router.refresh();
+}
+
+const displayEmpLabel = matchedEmp
+  ? `${matchedEmp.name || matchedEmp.code} — ${matchedEmp.code}`
+  : empCodeParam
+  ? empCodeParam
+  : selfMode
+  ? "(self)"
+  : "—";
+
+
+      
+        
+
+      
+
+  
 
   // ---------- UI ----------
 
@@ -505,4 +564,5 @@ export default function SupervisorFacePunchPage() {
     </Suspense>
   );
 }
+
 

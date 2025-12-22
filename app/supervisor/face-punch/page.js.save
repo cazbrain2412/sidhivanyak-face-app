@@ -14,6 +14,8 @@ function SupervisorFacePunchInner() {
   const streamRef = useRef(null);
   const videoRef = useRef(null);
   const [cameraFacing, setCameraFacing] = useState("user"); // "user" | "environment"
+
+  const streamRef = useRef(null);
   const [status, setStatus] = useState("initialising camera...");
   const [threshold, setThreshold] = useState(0.65);
   const [modelsLoaded, setModelsLoaded] = useState(false);
@@ -185,35 +187,15 @@ function SupervisorFacePunchInner() {
 
       setStatus(`sending ${action.toUpperCase()} to server…`);
 
-// 🔹 Decide API dynamically
-const apiUrl = selfMode
-  ? "/api/supervisor/attendance/mark"   // Supervisor self attendance
-  : "/api/attendance/mark";             // Employee attendance (existing)
-
-// 🔹 Send punch data
-const res = await fetch(apiUrl, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("supervisorToken")}`,
-  },
-  body: JSON.stringify({
-    descriptor,
-    action, // "in" | "out"
-    location: location
-      ? {
-          lat: location.lat,
-          lng: location.lng,
-          accuracy: location.accuracy,
-          locationName: location.locationName || "",
-        }
-      : {},
-  }),
-});
-
-
-
-      
+      const res = await fetch("/api/attendance/mark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descriptor,
+          action, // "in" or "out"
+          location, // NEW: send lat/lng/accuracy (may be null)
+        }),
+      });
 
       const data = await res.json();
 
@@ -312,13 +294,7 @@ const res = await fetch(apiUrl, {
       </div>
 
       <div style={{ marginBottom: 8, fontSize: 14 }}>
-        <strong>Mode:</strong>{" "}
-{empCodeParam
-  ? `Employee (${empCodeParam})`
-  : selfMode
-  ? "Self Attendance"
-  : "Universal Attendance"}
-
+        <strong>Employee:</strong> {displayEmpLabel}
       </div>
 
       <div
@@ -351,33 +327,6 @@ const res = await fetch(apiUrl, {
           marginBottom: 10,
         }}
       >
-
-<button
-  onClick={() => {
-    // stop current stream
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-    }
-    setCameraFacing((prev) =>
-      prev === "user" ? "environment" : "user"
-    );
-    setStatus("switching camera...");
-  }}
-  style={{
-    padding: "10px 14px",
-    borderRadius: 8,
-    border: "1px solid #ccc",
-    background: "#eef2ff",
-    fontSize: 13,
-    cursor: "pointer",
-  }}
->
-  Switch Camera
-</button>
-
-
-
-
         <button
           disabled={busy}
           onClick={() => markAttendance("in")}

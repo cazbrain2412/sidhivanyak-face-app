@@ -128,33 +128,6 @@ export default function SupervisorDashboardPage() {
             </button>
           </div>
         </section>
-     
-
-{/* UNIVERSAL ATTENDANCE */}
-<section className="bg-white rounded-2xl shadow-sm p-4">
-  <div className="flex items-center justify-between">
-    <div>
-      <h3 className="text-lg font-semibold">Universal Attendance</h3>
-      <p className="text-sm text-gray-500 mt-1">
-        Mark attendance for any assigned employee using face
-      </p>
-    </div>
-
-    <button
-      onClick={() => router.push("/supervisor/universal-punch")}
-      className="bg-green-600 text-white px-5 py-2 rounded-lg shadow-md hover:bg-green-700 text-sm"
-    >
-      Mark Attendance
-    </button>
-  </div>
-</section>
-
-
-
-
-
-
-
 
         {/* Assigned employees */}
         <section className="bg-white rounded-2xl shadow-sm p-4">

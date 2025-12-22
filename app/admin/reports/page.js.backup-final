@@ -1,0 +1,118 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+export default function ReportsCalendarPage() {
+  const [month, setMonth] = useState("2025-12");
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  async function loadCalendar() {
+    setLoading(true);
+    const res = await fetch(`/api/reports/calendar?month=${month}`);
+    const json = await res.json();
+    setData(json);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadCalendar();
+  }, [month]);
+
+  if (!data) return <div className="p-4">Loading…</div>;
+
+  return (
+    <div className="p-4 overflow-x-auto">
+      <h1 className="text-xl font-bold mb-4">Attendance Calendar Report</h1>
+
+      {/* FILTER BAR */}
+      <div className="flex gap-3 mb-4">
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="border px-2 py-1"
+        />
+        <button
+          onClick={loadCalendar}
+          className="border px-3 py-1 bg-gray-100"
+        >
+          Apply
+        </button>
+      </div>
+
+      {/* CALENDAR TABLE */}
+      <table className="border-collapse border w-full text-sm">
+        <thead>
+          <tr className="bg-gray-100">
+            <th className="border p-2 sticky left-0 bg-gray-100 z-10">
+              Employee
+            </th>
+
+            {data.days.map((d) => (
+              <th key={d.date} className="border p-1 text-center min-w-[48px]">
+                <div className="text-xs">{d.weekday}</div>
+                <div className="font-semibold">{d.day}</div>
+              </th>
+            ))}
+
+            <th className="border p-2">P</th>
+            <th className="border p-2">A</th>
+            <th className="border p-2">H</th>
+            <th className="border p-2">L</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {data.rows.map((row) => (
+            <tr key={row.employee.code}>
+              <td className="border p-2 sticky left-0 bg-white z-10">
+                <div className="font-medium">{row.employee.name}</div>
+                <div className="text-xs text-gray-500">
+                  {row.employee.code}
+                </div>
+              </td>
+
+              {data.days.map((d) => {
+                const s = row.attendance[d.date];
+                const color =
+                  s === "P"
+                    ? "bg-green-200"
+                    : s === "H"
+                    ? "bg-yellow-200"
+                    : s === "L"
+                    ? "bg-blue-200"
+                    : "bg-red-100";
+
+                return (
+                  <td
+                    key={d.date}
+                    className={`border text-center ${color}`}
+                  >
+                    {s}
+                  </td>
+                );
+              })}
+
+              <td className="border text-center font-semibold">
+                {row.summary.present}
+              </td>
+              <td className="border text-center font-semibold">
+                {row.summary.absent}
+              </td>
+              <td className="border text-center font-semibold">
+                {row.summary.half}
+              </td>
+              <td className="border text-center font-semibold">
+                {row.summary.leave}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {loading && <div className="mt-2">Refreshing…</div>}
+    </div>
+  );
+}
+
