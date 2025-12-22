@@ -1,4 +1,3 @@
-// app/api/employees/by-supervisor/route.js
 import dbConnect from "../../../../lib/mongodb";
 import Employee from "../../../../models/Employee";
 import jwt from "jsonwebtoken";
@@ -20,35 +19,45 @@ export async function GET(req) {
 
     try {
       decoded = jwt.verify(token, JWT_SECRET);
-    } catch (err) {
-      return new Response(JSON.stringify({ success: false, error: "Invalid or expired token" }), {
+    } catch {
+      return new Response(JSON.stringify({ success: false, error: "Invalid token" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
     }
 
     const url = new URL(req.url);
-const supervisorFromQuery = url.searchParams.get("code");
-
-// Supervisor self-login → JWT
-// Admin / Zone Admin → query param
-const supervisorCode = supervisorFromQuery || decoded.code;
-
+    const supervisorFromQuery = url.searchParams.get("code");
 
     await dbConnect();
 
-    // fetch employees managed by this supervisor
-    const employees = await Employee.find({ supervisorCode }).lean();
+    // ✅ SUPERVISOR LOGIN
+    if (decoded.role === "supervisor") {
+      const employees = await Employee.find({
+        supervisorCode: decoded.code,
+      }).lean();
 
-    return new Response(JSON.stringify({ success: true, employees }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+      return Response.json({ success: true, employees });
+    }
+
+    // ✅ ADMIN / ZONE ADMIN
+    if ((decoded.role === "admin" || decoded.role === "zoneadmin") && supervisorFromQuery) {
+      const employees = await Employee.find({
+        supervisorCode: supervisorFromQuery,
+      }).lean();
+
+      return Response.json({ success: true, employees });
+    }
+
+    return Response.json(
+      { success: false, employees: [] },
+      { status: 200 }
+    );
   } catch (err) {
-    return new Response(JSON.stringify({ success: false, error: err.message || String(err) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return Response.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }
 
