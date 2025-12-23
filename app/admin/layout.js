@@ -61,6 +61,13 @@ export default function AdminLayout({ children }) {
   <NavItem href="/admin/attendance" label="Attendance" collapsed={collapsed} />
   <NavItem href="/admin/reports" label="Reports" collapsed={collapsed} />
 
+{/* ✅ NEW: Supervisor Attendance */}
+<NavItem
+  href="/admin/supervisor-attendance"
+  label="Supervisor Attendance"
+  collapsed={collapsed}
+/>
+
   <div className="border-t border-sky-600/40 mt-4" />
   <NavItem href="/" label="Open Public App" collapsed={collapsed} />
 </nav>

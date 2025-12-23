@@ -256,13 +256,18 @@ export default function AdminSupervisorsPage() {
     setBankBranch(s.bankBranch || "");
 
     const zid = s.zoneId || s.zone || "";
-    setZoneId(zid ? String(zid) : "");
+   setZoneId(zid ? String(zid) : "");
 
-    const divRaw = Array.isArray(s.divisions) ? s.divisions : s.division ? [s.division] : [];
-    const divIdsNorm = divRaw.map((x) => String(x));
-    setDivisionIds(divIdsNorm);
+// ✅ FIXED division prefill (ONLY use divisions array)
+const divRaw = Array.isArray(s.divisions) ? s.divisions : [];
+const divIdsNorm = divRaw.map((x) => String(x));
+setDivisionIds(divIdsNorm);
 
-    setDepartment(s.department || "");
+setDepartment(s.department || "");
+
+
+
+  
 
     if (Array.isArray(s.documents) && s.documents.length > 0) {
       setDocuments(
@@ -345,9 +350,12 @@ export default function AdminSupervisorsPage() {
       ifsc: ifsc?.trim() || null,
       bankBranch: bankBranch?.trim() || null,
 
-      zone: zoneId || null,
-      divisions: divisionIds,
-      department: department || null,
+      
+        zone: zoneId || null,
+        divisions: divisionIds,
+        department: department || null,
+
+      
 
       documents: docsPayload,
     };

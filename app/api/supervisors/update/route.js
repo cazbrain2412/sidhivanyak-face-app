@@ -6,7 +6,28 @@ export async function POST(req) {
   try {
     await dbConnect();
     const body = await req.json();
-    const { code, name, email, mobile, gender, address, dob, doj, aadhar, pan, pfNumber, esicNumber, bankAccount, ifsc, bankBranch, zone, division, department, documents } = body || {};
+    const { 
+  code,
+  name,
+  email,
+  mobile,
+  gender,
+  address,
+  dob,
+  doj,
+  aadhar,
+  pan,
+  pfNumber,
+  esicNumber,
+  bankAccount,
+  ifsc,
+  bankBranch,
+  zone,
+  divisions,
+  department,
+  documents
+} = body || {};
+
 
     if (!code) {
       return new Response(JSON.stringify({ success: false, error: "Supervisor code required" }), { status: 400, headers: { "Content-Type": "application/json" }});
@@ -28,7 +49,8 @@ export async function POST(req) {
     if (ifsc !== undefined) update.ifsc = ifsc || null;
     if (bankBranch !== undefined) update.bankBranch = bankBranch || null;
     if (zone !== undefined) update.zone = zone || null;
-    if (division !== undefined) update.division = division || null;
+    if (Array.isArray(divisions)) update.divisions = divisions;
+
     if (department !== undefined) update.department = department || null;
     if (Array.isArray(documents)) update.documents = documents;
 
@@ -55,8 +77,11 @@ export async function POST(req) {
       ifsc: sup.ifsc,
       bankBranch: sup.bankBranch,
       zone: sup.zone,
-      division: sup.division,
+      divisions: sup.divisions || [],
       department: sup.department,
+
+      
+      
       documents: sup.documents || [],
       updatedAt: sup.updatedAt,
     };

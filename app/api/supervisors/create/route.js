@@ -20,27 +20,29 @@ export async function POST(req) {
   try {
     const body = await req.json();
     const {
-      code,
-      name,
-      email,
-      mobile,
-      password,
-      gender,
-      address,
-      dob,
-      doj,
-      aadhar,
-      pan,
-      pfNumber,
-      esicNumber,
-      bankAccount,
-      ifsc,
-      bankBranch,
-      zone,
-      division,
-      department,
-      documents,
-    } = body || {};
+  code,
+  name,
+  email,
+  mobile,
+  password,
+  gender,
+  address,
+  dob,
+  doj,
+  aadhar,
+  pan,
+  pfNumber,
+  esicNumber,
+  bankAccount,
+  ifsc,
+  bankBranch,
+  zone,
+  divisions,
+  department,
+  documents,
+} = body || {};
+
+      
 
     if (!code || !name || !password || !mobile) {
       return new Response(
@@ -81,8 +83,11 @@ export async function POST(req) {
       ifsc: ifsc || null,
       bankBranch: bankBranch || null,
       zone: zone || null,
-      division: division || null,
+      divisions: Array.isArray(divisions) ? divisions : [],
       department: department || null,
+
+      
+      
       documents: Array.isArray(documents) ? documents : [],
       faceDescriptor: [],
       passwordHash,
@@ -106,8 +111,11 @@ export async function POST(req) {
       ifsc: sup.ifsc,
       bankBranch: sup.bankBranch,
       zone: sup.zone,
-      division: sup.division,
+      divisions: sup.divisions || [],
       department: sup.department,
+
+            
+      
       documents: sup.documents || [],
       createdAt: sup.createdAt,
     };
